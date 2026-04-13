@@ -1,0 +1,13 @@
+[project]
+name = "codesage"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]

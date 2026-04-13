@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+
+[dev]
+pytest
+ruff
+mypy
