@@ -7,7 +7,7 @@ class CallGraphBuilder:
 
     def build(self, units: list[CodeUnit], resolver: ImportResolver) -> nx.DiGraph:
 
-        G = nx.DiGraph()
+        G = nx.MultiDiGraph()
 
         for unit in units:
 
@@ -50,3 +50,30 @@ class CallGraphBuilder:
                     G.add_edge(unit.id, call, edge_type = "calls", resolved = False)
 
         return G
+    
+    def link_tests(self, G: nx.DiGraph, resolver: ImportResolver):
+
+        test_edges = [
+            (u, v)
+            for u, v, data in G.edges(data=True)
+            if data.get("edge_type") == "tests"
+        ]
+
+        G.remove_edges_from(test_edges)
+
+        all_unit_ids = set(G.nodes)
+
+        for node_id, data in G.nodes(data=True):
+
+            if not data.get("is_test"):
+                continue
+
+            namespace = {}
+            calls = data.get("calls", [])
+
+            for call in calls:
+
+                resolved = resolver.resolve_call(call, namespace, all_unit_ids)
+
+                if resolved and resolved in G.nodes:
+                    G.add_edge(node_id, resolved, edge_type = "tests", resolved=True)

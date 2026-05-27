@@ -16,3 +16,29 @@ class GraphQueries:
         callees = self.get_callees(func_id)
 
         return callers + callees
+    
+    def get_uncovered_functions(self):
+        uncovered = []
+
+        for node in self.G.nodes:
+
+            data = self.G.nodes[node]
+
+            if data.get("is_test"):
+                continue
+
+            tested = False
+
+            for pred in self.G.predecessors(node):
+                edge_dict = self.G.get_edge_data(pred, node)
+
+                for _, edge_data in edge_dict.items():
+
+                    if edge_data.get("edge_type") == "tests":
+                        tested = True
+                        break
+
+            if not tested:
+                uncovered.append(node)
+
+        return uncovered
