@@ -22,7 +22,17 @@ class QdrantCodeStore:
         collection_name="codesage"
     ):
 
-        self.client = QdrantClient(url=url)
+        if url == ":memory:":
+
+            self.client = QdrantClient(
+                location=":memory:"
+            )
+
+        else:
+
+            self.client = QdrantClient(
+                url=url
+            )
 
         self.collection_name = collection_name
 
