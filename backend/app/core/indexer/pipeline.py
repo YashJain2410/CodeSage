@@ -9,6 +9,8 @@ from app.core.indexer.qdrant_store import QdrantCodeStore
 
 from pathlib import Path
 
+from app.core.indexer.experiment_tracker import ( ExperimentTracker )
+
 
 class IndexingPipeline:
 
@@ -17,6 +19,7 @@ class IndexingPipeline:
         self.embedder = CodeEmbedder()
         self.vector_store = QdrantCodeStore()
         self.graph_builder = CallGraphBuilder()
+        self.tracker = ExperimentTracker()
 
     def discover_files(self, repo_path):
 
@@ -136,6 +139,17 @@ class IndexingPipeline:
         self.vector_store.upsert_units(units, embeddings)
 
         print("Indexing complete")
+
+        stats = {
+            "units": len(units),
+            "nodes": len(graph.nodes),
+            "edges": len(graph.edges)
+        }
+
+        self.tracker.track_indexing_run(
+            stats,
+            "microsoft/unixcoder-base"
+        )
 
         return {
             "units": len(units),
