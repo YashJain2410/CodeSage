@@ -10,3 +10,9 @@ REQUEST_LATENCY = Histogram(
     "request_latency_seconds",
     "Request Latency"
 )
+
+INTENT_CLASSIFICATION_METHOD = Counter(
+    "intent_classification_method",
+    "Intent classification method",
+    ["method"]
+)
