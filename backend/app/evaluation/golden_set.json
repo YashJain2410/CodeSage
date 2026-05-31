@@ -1,0 +1,1600 @@
+[
+  {
+    "id": "BUG_001",
+    "query": "Why can an inactive account still get past login?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/service.py::authenticate_user",
+      "users/service.py::lookup_user_for_auth"
+    ],
+    "expected_answer_contains": [
+      "inactive user",
+      "user.is_active",
+      "password_hash"
+    ],
+    "expected_citations": [
+      "auth/service.py:25",
+      "users/repository.py:18"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_002",
+    "query": "What bug explains a TypeError when payment amount is None?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/validators.py::validate_amount",
+      "payments/stripe.py::charge_card"
+    ],
+    "expected_answer_contains": [
+      "None",
+      "TypeError",
+      "validate_amount"
+    ],
+    "expected_citations": [
+      "payments/validators.py:8",
+      "payments/stripe.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_003",
+    "query": "Why can registering the same email overwrite the previous user?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "duplicate email",
+      "overwrite",
+      "save_user"
+    ],
+    "expected_citations": [
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_004",
+    "query": "What off-by-one bug affects token expiration checks?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/tokens.py::is_token_expired",
+      "auth/tokens.py::decode_token"
+    ],
+    "expected_answer_contains": [
+      "off-by-one",
+      "expires_at",
+      "is_token_expired"
+    ],
+    "expected_citations": [
+      "auth/tokens.py:40",
+      "auth/tokens.py:58"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_005",
+    "query": "Why does session refresh ignore the stored user record?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/service.py::refresh_session",
+      "auth/tokens.py::decode_token"
+    ],
+    "expected_answer_contains": [
+      "dummy user",
+      "refresh_session",
+      "revoked state"
+    ],
+    "expected_citations": [
+      "auth/service.py:40",
+      "auth/tokens.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_006",
+    "query": "What bug makes token refresh fail with the wrong input type?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "app.py::token_refresh_handler",
+      "auth/service.py::refresh_session"
+    ],
+    "expected_answer_contains": [
+      "TokenPayload",
+      "TypeError",
+      "refresh_session"
+    ],
+    "expected_citations": [
+      "app.py:62",
+      "auth/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_007",
+    "query": "Why would an invoice send the order id instead of the customer email?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/invoices.py::generate_invoice",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "user_id",
+      "receipt email",
+      "user_email"
+    ],
+    "expected_citations": [
+      "payments/invoices.py:22",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_008",
+    "query": "What refund bug updates status before the refund is actually confirmed?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "orders/service.py::refund_order",
+      "payments/stripe.py::refund_charge"
+    ],
+    "expected_answer_contains": [
+      "refund_pending",
+      "refund_charge",
+      "transaction id"
+    ],
+    "expected_citations": [
+      "orders/service.py:55",
+      "payments/stripe.py:41"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_009",
+    "query": "Where is the missing authentication check in the checkout entry point?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "app.py::checkout_handler",
+      "orders/service.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "missing auth check",
+      "checkout_handler",
+      "user context"
+    ],
+    "expected_citations": [
+      "app.py:35",
+      "orders/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_010",
+    "query": "Why can invoice totals silently drop malformed line items to zero?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/invoices.py::calculate_invoice_total",
+      "payments/validators.py::validate_invoice_items"
+    ],
+    "expected_answer_contains": [
+      "silent zero total",
+      "calculate_invoice_total",
+      "missing amount"
+    ],
+    "expected_citations": [
+      "payments/invoices.py:11",
+      "payments/validators.py:17"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_011",
+    "query": "What bug allows SMS delivery without checking the phone number?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "notifications/sms_service.py::send_order_update_sms",
+      "orders/service.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "phone_number",
+      "validation",
+      "send_order_update_sms"
+    ],
+    "expected_citations": [
+      "notifications/sms_service.py:16",
+      "orders/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_012",
+    "query": "Why is the retry logic inconsistent between the decorator and the payment wrapper?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/retry.py::retry_payment_operation",
+      "utils/decorators.py::retry_on_failure"
+    ],
+    "expected_answer_contains": [
+      "retry_on_failure",
+      "should_retry",
+      "backoff"
+    ],
+    "expected_citations": [
+      "payments/retry.py:22",
+      "utils/decorators.py:57"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_013",
+    "query": "What bug can cause duplicate user ids during registration?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "id collision",
+      "len(email)",
+      "register_user_profile"
+    ],
+    "expected_citations": [
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_014",
+    "query": "Where does request authorization fail to verify that the token belongs to the current user?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/middleware.py::require_authentication",
+      "auth/middleware.py::authorize_request"
+    ],
+    "expected_answer_contains": [
+      "subject mismatch",
+      "require_authentication",
+      "user"
+    ],
+    "expected_citations": [
+      "auth/middleware.py:21",
+      "auth/middleware.py:31"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_015",
+    "query": "What bug causes a zero TTL to be ignored when creating an access token?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/tokens.py::create_access_token",
+      "config.py::load_settings"
+    ],
+    "expected_answer_contains": [
+      "ttl_seconds",
+      "zero",
+      "or"
+    ],
+    "expected_citations": [
+      "auth/tokens.py:20",
+      "config.py:19"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_016",
+    "query": "Why can a refund succeed without checking the original charge amount?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/stripe.py::refund_charge",
+      "orders/service.py::refund_order"
+    ],
+    "expected_answer_contains": [
+      "over-refund",
+      "original charge",
+      "refund_charge"
+    ],
+    "expected_citations": [
+      "payments/stripe.py:41",
+      "orders/service.py:55"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_017",
+    "query": "What missing validation can make password reset crash on incomplete payloads?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "app.py::password_reset_handler",
+      "auth/service.py::request_password_reset"
+    ],
+    "expected_answer_contains": [
+      "new_password",
+      "KeyError",
+      "password_reset_handler"
+    ],
+    "expected_citations": [
+      "app.py:53",
+      "auth/service.py:54"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_018",
+    "query": "Why can cached user lookups return stale data after a save?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "users/repository.py::get_user_by_email",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "stale cache",
+      "cache_result",
+      "save_user"
+    ],
+    "expected_citations": [
+      "users/repository.py:18",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_019",
+    "query": "Where does login validation accidentally accept a None identifier?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "auth/validators.py::validate_login_payload",
+      "auth/service.py::authenticate_user"
+    ],
+    "expected_answer_contains": [
+      "None",
+      "str(None)",
+      "validate_login_payload"
+    ],
+    "expected_citations": [
+      "auth/validators.py:14",
+      "auth/service.py:25"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "BUG_020",
+    "query": "What bug could make the Stripe customer id diverge from the user email lookup?",
+    "expected_intent": "BUG",
+    "expected_func_ids": [
+      "payments/stripe.py::create_stripe_customer",
+      "payments/stripe.py::charge_card"
+    ],
+    "expected_answer_contains": [
+      "customer id",
+      "create_stripe_customer",
+      "lookup"
+    ],
+    "expected_citations": [
+      "payments/stripe.py:13",
+      "payments/stripe.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_001",
+    "query": "Explain the login flow from the app entry point through token creation.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::login_handler",
+      "auth/service.py::authenticate_user",
+      "auth/tokens.py::create_access_token"
+    ],
+    "expected_answer_contains": [
+      "login_handler",
+      "authenticate_user",
+      "create_access_token"
+    ],
+    "expected_citations": [
+      "app.py:16",
+      "auth/service.py:25",
+      "auth/tokens.py:20"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_002",
+    "query": "Explain how user registration stores the record and returns onboarding data.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::register_handler",
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "register_handler",
+      "register_user_profile",
+      "save_user"
+    ],
+    "expected_citations": [
+      "app.py:25",
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_003",
+    "query": "Explain the password reset workflow from request to final password write.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::password_reset_handler",
+      "auth/service.py::request_password_reset",
+      "auth/service.py::reset_password"
+    ],
+    "expected_answer_contains": [
+      "password reset",
+      "request_password_reset",
+      "reset_password"
+    ],
+    "expected_citations": [
+      "app.py:53",
+      "auth/service.py:54",
+      "auth/service.py:64"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_004",
+    "query": "Explain how token refresh validates the token and produces a new access token.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::token_refresh_handler",
+      "auth/middleware.py::require_authentication",
+      "auth/service.py::refresh_session"
+    ],
+    "expected_answer_contains": [
+      "token refresh",
+      "require_authentication",
+      "refresh_session"
+    ],
+    "expected_citations": [
+      "app.py:62",
+      "auth/middleware.py:21",
+      "auth/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_005",
+    "query": "Explain the checkout flow from order creation through invoice and notification delivery.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::checkout_handler",
+      "orders/service.py::checkout_handler",
+      "payments/invoices.py::generate_invoice"
+    ],
+    "expected_answer_contains": [
+      "checkout",
+      "generate_invoice",
+      "send_receipt_email"
+    ],
+    "expected_citations": [
+      "app.py:35",
+      "orders/service.py:40",
+      "payments/invoices.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_006",
+    "query": "Explain how a refund request moves from the app into the order service and Stripe adapter.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::refund_handler",
+      "orders/service.py::refund_order",
+      "payments/stripe.py::refund_charge"
+    ],
+    "expected_answer_contains": [
+      "refund",
+      "refund_order",
+      "refund_charge"
+    ],
+    "expected_citations": [
+      "app.py:45",
+      "orders/service.py:55",
+      "payments/stripe.py:41"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_007",
+    "query": "Explain how invoice generation computes totals and sends the receipt email.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "payments/invoices.py::calculate_invoice_total",
+      "payments/invoices.py::generate_invoice",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "calculate_invoice_total",
+      "generate_invoice",
+      "send_receipt_email"
+    ],
+    "expected_citations": [
+      "payments/invoices.py:11",
+      "payments/invoices.py:22",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_008",
+    "query": "Explain the email receipt flow and what data the message includes.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "notifications/email_service.py::build_email_message",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "subject",
+      "body",
+      "recipient"
+    ],
+    "expected_citations": [
+      "notifications/email_service.py:9",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_009",
+    "query": "Explain the order update SMS path and how the message is truncated.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "notifications/sms_service.py::format_sms_message",
+      "notifications/sms_service.py::send_order_update_sms"
+    ],
+    "expected_answer_contains": [
+      "format_sms_message",
+      "160",
+      "send_order_update_sms"
+    ],
+    "expected_citations": [
+      "notifications/sms_service.py:8",
+      "notifications/sms_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_010",
+    "query": "Explain how the login validators normalize and reject bad payloads.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "auth/validators.py::normalize_identifier",
+      "auth/validators.py::validate_login_payload"
+    ],
+    "expected_answer_contains": [
+      "normalize",
+      "identifier",
+      "password"
+    ],
+    "expected_citations": [
+      "auth/validators.py:8",
+      "auth/validators.py:14"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_011",
+    "query": "Explain how the auth middleware parses and validates a bearer token.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "auth/middleware.py::extract_bearer_token",
+      "auth/middleware.py::require_authentication"
+    ],
+    "expected_answer_contains": [
+      "Bearer",
+      "decode_token",
+      "access token"
+    ],
+    "expected_citations": [
+      "auth/middleware.py:11",
+      "auth/middleware.py:21"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_012",
+    "query": "Explain how the retry wrapper decides when to rerun a payment operation.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "payments/retry.py::should_retry",
+      "payments/retry.py::retry_payment_operation"
+    ],
+    "expected_answer_contains": [
+      "should_retry",
+      "retry_payment_operation",
+      "transient"
+    ],
+    "expected_citations": [
+      "payments/retry.py:15",
+      "payments/retry.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_013",
+    "query": "Explain how the order repository stores and updates order state.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "orders/repository.py::create_order_record",
+      "orders/repository.py::update_order_status"
+    ],
+    "expected_answer_contains": [
+      "create_order_record",
+      "update_order_status",
+      "status"
+    ],
+    "expected_citations": [
+      "orders/repository.py:23",
+      "orders/repository.py:30"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_014",
+    "query": "Explain how the user repository supports auth and onboarding flows.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "users/repository.py::get_user_by_email",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "get_user_by_email",
+      "save_user",
+      "in-memory store"
+    ],
+    "expected_citations": [
+      "users/repository.py:18",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_015",
+    "query": "Explain how the app routes a refund request into the domain model and payment adapter.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::refund_handler",
+      "orders/service.py::refund_order",
+      "payments/stripe.py::refund_charge"
+    ],
+    "expected_answer_contains": [
+      "refund_handler",
+      "refund_order",
+      "refund_charge"
+    ],
+    "expected_citations": [
+      "app.py:45",
+      "orders/service.py:55",
+      "payments/stripe.py:41"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_016",
+    "query": "Explain the app onboarding path that starts at registration and ends with persistence.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "app.py::register_handler",
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "onboarding",
+      "register_user_profile",
+      "save_user"
+    ],
+    "expected_citations": [
+      "app.py:25",
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_017",
+    "query": "Explain how auth tokens are signed, decoded, and checked for expiry.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "auth/tokens.py::create_access_token",
+      "auth/tokens.py::decode_token",
+      "auth/tokens.py::is_token_expired"
+    ],
+    "expected_answer_contains": [
+      "signature",
+      "decode_token",
+      "expires_at"
+    ],
+    "expected_citations": [
+      "auth/tokens.py:20",
+      "auth/tokens.py:40",
+      "auth/tokens.py:58"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_018",
+    "query": "Explain how the checkout handler combines order creation, payment, invoice generation, and notifications.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "orders/service.py::checkout_handler",
+      "payments/invoices.py::generate_invoice",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "checkout_handler",
+      "generate_invoice",
+      "notifications"
+    ],
+    "expected_citations": [
+      "orders/service.py:40",
+      "payments/invoices.py:22",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_019",
+    "query": "Explain how password reset email delivery is assembled from the auth service and email service.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "auth/service.py::request_password_reset",
+      "notifications/email_service.py::send_password_reset_email"
+    ],
+    "expected_answer_contains": [
+      "reset email",
+      "reset_token",
+      "send_password_reset_email"
+    ],
+    "expected_citations": [
+      "auth/service.py:54",
+      "notifications/email_service.py:28"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "EXPLAIN_020",
+    "query": "Explain how the Stripe adapter validates and finalizes a card charge.",
+    "expected_intent": "EXPLAIN",
+    "expected_func_ids": [
+      "payments/stripe.py::charge_card",
+      "payments/validators.py::validate_currency",
+      "payments/retry.py::retry_payment_operation"
+    ],
+    "expected_answer_contains": [
+      "charge_card",
+      "validate_currency",
+      "retry"
+    ],
+    "expected_citations": [
+      "payments/stripe.py:22",
+      "payments/validators.py:30",
+      "payments/retry.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_001",
+    "query": "If retry_on_failure changes, which payment paths are impacted?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "utils/decorators.py::retry_on_failure",
+      "payments/retry.py::retry_payment_operation",
+      "payments/stripe.py::charge_card"
+    ],
+    "expected_answer_contains": [
+      "retry_on_failure",
+      "retry_payment_operation",
+      "charge_card"
+    ],
+    "expected_citations": [
+      "utils/decorators.py:57",
+      "payments/retry.py:22",
+      "payments/stripe.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_002",
+    "query": "What changes if audit_action is modified?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "utils/decorators.py::audit_action",
+      "auth/service.py::authenticate_user",
+      "users/service.py::register_user_profile"
+    ],
+    "expected_answer_contains": [
+      "audit_action",
+      "audit_event",
+      "login"
+    ],
+    "expected_citations": [
+      "utils/decorators.py:29",
+      "auth/service.py:25",
+      "users/service.py:23"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_003",
+    "query": "Which call sites depend on validate_request?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "utils/decorators.py::validate_request",
+      "app.py::login_handler",
+      "app.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "validate_request",
+      "payload",
+      "required fields"
+    ],
+    "expected_citations": [
+      "utils/decorators.py:81",
+      "app.py:16",
+      "app.py:35"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_004",
+    "query": "What functions are affected if require_auth changes?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "utils/decorators.py::require_auth",
+      "auth/middleware.py::require_authentication",
+      "auth/middleware.py::authorize_request"
+    ],
+    "expected_answer_contains": [
+      "require_auth",
+      "require_authentication",
+      "authorize_request"
+    ],
+    "expected_citations": [
+      "utils/decorators.py:44",
+      "auth/middleware.py:21",
+      "auth/middleware.py:31"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_005",
+    "query": "What is the blast radius of normalize_input in the repository?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "utils/decorators.py::normalize_input",
+      "users/repository.py::get_user_by_email",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "normalize_input",
+      "strip",
+      "repository"
+    ],
+    "expected_citations": [
+      "utils/decorators.py:131",
+      "users/repository.py:18",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_006",
+    "query": "Which payment checks depend on validate_amount?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "payments/validators.py::validate_amount",
+      "payments/stripe.py::charge_card",
+      "orders/service.py::create_order"
+    ],
+    "expected_answer_contains": [
+      "validate_amount",
+      "charge_card",
+      "create_order"
+    ],
+    "expected_citations": [
+      "payments/validators.py:8",
+      "payments/stripe.py:22",
+      "orders/service.py:26"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_007",
+    "query": "Which flows depend on create_access_token?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "auth/tokens.py::create_access_token",
+      "auth/service.py::authenticate_user",
+      "auth/service.py::refresh_session"
+    ],
+    "expected_answer_contains": [
+      "create_access_token",
+      "authenticate_user",
+      "refresh_session"
+    ],
+    "expected_citations": [
+      "auth/tokens.py:20",
+      "auth/service.py:25",
+      "auth/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_008",
+    "query": "Which modules rely on save_user as a shared persistence point?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "users/repository.py::save_user",
+      "users/service.py::register_user_profile",
+      "app.py::register_handler"
+    ],
+    "expected_answer_contains": [
+      "save_user",
+      "register_user_profile",
+      "onboarding"
+    ],
+    "expected_citations": [
+      "users/repository.py:27",
+      "users/service.py:23",
+      "app.py:25"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_009",
+    "query": "What downstream code changes if create_order_record changes?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "orders/repository.py::create_order_record",
+      "orders/service.py::create_order",
+      "orders/service.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "create_order_record",
+      "checkout_handler",
+      "order"
+    ],
+    "expected_citations": [
+      "orders/repository.py:23",
+      "orders/service.py:26",
+      "orders/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_010",
+    "query": "What breaks if send_receipt_email changes its payload shape?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "notifications/email_service.py::send_receipt_email",
+      "payments/invoices.py::generate_invoice",
+      "orders/service.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "send_receipt_email",
+      "generate_invoice",
+      "invoice"
+    ],
+    "expected_citations": [
+      "notifications/email_service.py:16",
+      "payments/invoices.py:22",
+      "orders/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_011",
+    "query": "Which modules depend on generate_invoice output?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "payments/invoices.py::generate_invoice",
+      "orders/service.py::checkout_handler",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "generate_invoice",
+      "checkout_handler",
+      "receipt"
+    ],
+    "expected_citations": [
+      "payments/invoices.py:22",
+      "orders/service.py:40",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_012",
+    "query": "Which code depends on get_user_by_email for auth lookups?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "users/repository.py::get_user_by_email",
+      "users/service.py::lookup_user_for_auth",
+      "auth/service.py::authenticate_user"
+    ],
+    "expected_answer_contains": [
+      "get_user_by_email",
+      "lookup_user_for_auth",
+      "authenticate_user"
+    ],
+    "expected_citations": [
+      "users/repository.py:18",
+      "users/service.py:40",
+      "auth/service.py:25"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_013",
+    "query": "Which handlers are affected by changes to the auth middleware?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "auth/middleware.py::require_authentication",
+      "app.py::token_refresh_handler",
+      "app.py::checkout_handler"
+    ],
+    "expected_answer_contains": [
+      "middleware",
+      "token_refresh_handler",
+      "auth"
+    ],
+    "expected_citations": [
+      "auth/middleware.py:21",
+      "app.py:62",
+      "app.py:35"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_014",
+    "query": "Which modules are influenced by validate_currency?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "payments/validators.py::validate_currency",
+      "payments/stripe.py::charge_card",
+      "payments/invoices.py::generate_invoice"
+    ],
+    "expected_answer_contains": [
+      "validate_currency",
+      "currency",
+      "generate_invoice"
+    ],
+    "expected_citations": [
+      "payments/validators.py:30",
+      "payments/stripe.py:22",
+      "payments/invoices.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "IMPACT_015",
+    "query": "What functions are downstream of refund_charge?",
+    "expected_intent": "IMPACT",
+    "expected_func_ids": [
+      "payments/stripe.py::refund_charge",
+      "orders/service.py::refund_order",
+      "app.py::refund_handler"
+    ],
+    "expected_answer_contains": [
+      "refund_charge",
+      "refund_order",
+      "refund_handler"
+    ],
+    "expected_citations": [
+      "payments/stripe.py:41",
+      "orders/service.py:55",
+      "app.py:45"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "TEST_001",
+    "query": "Which test covers a successful login and which production functions does it call?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_auth.py::test_authenticate_user_success",
+      "auth/service.py::authenticate_user",
+      "auth/tokens.py::create_access_token"
+    ],
+    "expected_answer_contains": [
+      "pytest",
+      "successful login",
+      "access token"
+    ],
+    "expected_citations": [
+      "tests/test_auth.py:25",
+      "auth/service.py:25",
+      "auth/tokens.py:20"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_002",
+    "query": "What test asserts the invalid password path for authentication?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_auth.py::test_authenticate_user_invalid_password",
+      "auth/service.py::authenticate_user"
+    ],
+    "expected_answer_contains": [
+      "invalid password",
+      "AuthenticationError",
+      "authenticate_user"
+    ],
+    "expected_citations": [
+      "tests/test_auth.py:34",
+      "auth/service.py:25"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_003",
+    "query": "Which test verifies refresh_session returns a new access token?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_auth.py::test_refresh_session_returns_access_token",
+      "auth/service.py::refresh_session",
+      "auth/tokens.py::create_refresh_token"
+    ],
+    "expected_answer_contains": [
+      "refresh_session",
+      "access token",
+      "refresh token"
+    ],
+    "expected_citations": [
+      "tests/test_auth.py:41",
+      "auth/service.py:40",
+      "auth/tokens.py:30"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_004",
+    "query": "Which test exercises user registration persistence?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_users.py::test_register_user_profile_success",
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "register_user_profile",
+      "save_user",
+      "persistence"
+    ],
+    "expected_citations": [
+      "tests/test_users.py:17",
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_005",
+    "query": "Which test checks the short password registration failure?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_users.py::test_register_user_profile_invalid_password",
+      "users/service.py::register_user_profile"
+    ],
+    "expected_answer_contains": [
+      "invalid password",
+      "validation",
+      "register_user_profile"
+    ],
+    "expected_citations": [
+      "tests/test_users.py:25",
+      "users/service.py:23"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_006",
+    "query": "Which test covers the payment amount happy path?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_payments.py::test_validate_amount_success",
+      "payments/validators.py::validate_amount"
+    ],
+    "expected_answer_contains": [
+      "positive amount",
+      "validate_amount",
+      "happy path"
+    ],
+    "expected_citations": [
+      "tests/test_payments.py:18",
+      "payments/validators.py:8"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_007",
+    "query": "Which test checks that invalid amounts are rejected?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_payments.py::test_validate_amount_invalid",
+      "payments/validators.py::validate_amount"
+    ],
+    "expected_answer_contains": [
+      "invalid amount",
+      "reject",
+      "validate_amount"
+    ],
+    "expected_citations": [
+      "tests/test_payments.py:24",
+      "payments/validators.py:8"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_008",
+    "query": "Which test validates the Stripe charge success path?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_payments.py::test_charge_card_success",
+      "payments/stripe.py::charge_card"
+    ],
+    "expected_answer_contains": [
+      "charge_card",
+      "transaction_id",
+      "success"
+    ],
+    "expected_citations": [
+      "tests/test_payments.py:44",
+      "payments/stripe.py:22"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_009",
+    "query": "Which test exercises the refund path?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_payments.py::test_refund_charge_success",
+      "payments/stripe.py::refund_charge"
+    ],
+    "expected_answer_contains": [
+      "refund_charge",
+      "refund_txn",
+      "success"
+    ],
+    "expected_citations": [
+      "tests/test_payments.py:61",
+      "payments/stripe.py:41"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_010",
+    "query": "Which test verifies order creation?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_orders.py::test_create_order_success",
+      "orders/service.py::create_order"
+    ],
+    "expected_answer_contains": [
+      "create_order",
+      "pending",
+      "total_amount"
+    ],
+    "expected_citations": [
+      "tests/test_orders.py:16",
+      "orders/service.py:26"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_011",
+    "query": "Which test validates checkout end-to-end?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_orders.py::test_checkout_handler_success",
+      "orders/service.py::checkout_handler",
+      "payments/invoices.py::generate_invoice"
+    ],
+    "expected_answer_contains": [
+      "checkout_handler",
+      "generate_invoice",
+      "invoice_id"
+    ],
+    "expected_citations": [
+      "tests/test_orders.py:33",
+      "orders/service.py:40",
+      "payments/invoices.py:22"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_012",
+    "query": "Which test covers refunding a stored order?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_orders.py::test_refund_order_success",
+      "orders/service.py::refund_order"
+    ],
+    "expected_answer_contains": [
+      "refund_order",
+      "refunded",
+      "success"
+    ],
+    "expected_citations": [
+      "tests/test_orders.py:42",
+      "orders/service.py:55"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_013",
+    "query": "Which test checks receipt email construction?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_notifications.py::test_send_receipt_email",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "receipt email",
+      "subject",
+      "recipient"
+    ],
+    "expected_citations": [
+      "tests/test_notifications.py:22",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_014",
+    "query": "Which test exercises SMS notification formatting?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_notifications.py::test_send_order_update_sms",
+      "notifications/sms_service.py::send_order_update_sms"
+    ],
+    "expected_answer_contains": [
+      "SMS",
+      "send_order_update_sms",
+      "sent"
+    ],
+    "expected_citations": [
+      "tests/test_notifications.py:43",
+      "notifications/sms_service.py:16"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "TEST_015",
+    "query": "Which test covers payment retry behavior?",
+    "expected_intent": "TEST",
+    "expected_func_ids": [
+      "tests/test_payments.py::test_retry_payment_operation_runs_function",
+      "payments/retry.py::retry_payment_operation"
+    ],
+    "expected_answer_contains": [
+      "retry_payment_operation",
+      "lambda",
+      "value + 1"
+    ],
+    "expected_citations": [
+      "tests/test_payments.py:75",
+      "payments/retry.py:22"
+    ],
+    "should_mention_test": true
+  },
+  {
+    "id": "ONBOARD_001",
+    "query": "Where should a new engineer start to understand the login flow?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::login_handler",
+      "auth/service.py::authenticate_user",
+      "auth/tokens.py::create_access_token"
+    ],
+    "expected_answer_contains": [
+      "login_handler",
+      "authenticate_user",
+      "create_access_token"
+    ],
+    "expected_citations": [
+      "app.py:16",
+      "auth/service.py:25",
+      "auth/tokens.py:20"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_002",
+    "query": "Where should I trace registration onboarding from the entry point?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::register_handler",
+      "users/service.py::register_user_profile",
+      "users/repository.py::save_user"
+    ],
+    "expected_answer_contains": [
+      "register_handler",
+      "register_user_profile",
+      "save_user"
+    ],
+    "expected_citations": [
+      "app.py:25",
+      "users/service.py:23",
+      "users/repository.py:27"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_003",
+    "query": "Where should I begin to understand checkout and payment processing?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::checkout_handler",
+      "orders/service.py::checkout_handler",
+      "payments/stripe.py::charge_card"
+    ],
+    "expected_answer_contains": [
+      "checkout_handler",
+      "charge_card",
+      "invoice"
+    ],
+    "expected_citations": [
+      "app.py:35",
+      "orders/service.py:40",
+      "payments/stripe.py:22"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_004",
+    "query": "Where is the refund workflow implemented for a new contributor?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::refund_handler",
+      "orders/service.py::refund_order",
+      "payments/stripe.py::refund_charge"
+    ],
+    "expected_answer_contains": [
+      "refund_handler",
+      "refund_order",
+      "refund_charge"
+    ],
+    "expected_citations": [
+      "app.py:45",
+      "orders/service.py:55",
+      "payments/stripe.py:41"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_005",
+    "query": "Where should I look to understand password reset end to end?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::password_reset_handler",
+      "auth/service.py::request_password_reset",
+      "auth/service.py::reset_password"
+    ],
+    "expected_answer_contains": [
+      "password_reset_handler",
+      "request_password_reset",
+      "reset_password"
+    ],
+    "expected_citations": [
+      "app.py:53",
+      "auth/service.py:54",
+      "auth/service.py:64"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_006",
+    "query": "Where does token refresh start and what middleware should I read first?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "app.py::token_refresh_handler",
+      "auth/middleware.py::require_authentication",
+      "auth/service.py::refresh_session"
+    ],
+    "expected_answer_contains": [
+      "token_refresh_handler",
+      "require_authentication",
+      "refresh_session"
+    ],
+    "expected_citations": [
+      "app.py:62",
+      "auth/middleware.py:21",
+      "auth/service.py:40"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_007",
+    "query": "Which module should I read to understand invoice generation first?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "payments/invoices.py::calculate_invoice_total",
+      "payments/invoices.py::generate_invoice",
+      "notifications/email_service.py::send_receipt_email"
+    ],
+    "expected_answer_contains": [
+      "calculate_invoice_total",
+      "generate_invoice",
+      "send_receipt_email"
+    ],
+    "expected_citations": [
+      "payments/invoices.py:11",
+      "payments/invoices.py:22",
+      "notifications/email_service.py:16"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_008",
+    "query": "What is the best entry point for understanding auth token structure?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "auth/tokens.py::create_access_token",
+      "auth/tokens.py::decode_token",
+      "auth/tokens.py::is_token_expired"
+    ],
+    "expected_answer_contains": [
+      "token structure",
+      "decode_token",
+      "expires_at"
+    ],
+    "expected_citations": [
+      "auth/tokens.py:20",
+      "auth/tokens.py:40",
+      "auth/tokens.py:58"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_009",
+    "query": "Which file should a new engineer open to see order persistence?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "orders/repository.py::create_order_record",
+      "orders/repository.py::update_order_status"
+    ],
+    "expected_answer_contains": [
+      "create_order_record",
+      "update_order_status",
+      "in-memory"
+    ],
+    "expected_citations": [
+      "orders/repository.py:23",
+      "orders/repository.py:30"
+    ],
+    "should_mention_test": false
+  },
+  {
+    "id": "ONBOARD_010",
+    "query": "Where can I start if I need to understand notification delivery helpers?",
+    "expected_intent": "ONBOARD",
+    "expected_func_ids": [
+      "notifications/email_service.py::build_email_message",
+      "notifications/sms_service.py::format_sms_message"
+    ],
+    "expected_answer_contains": [
+      "build_email_message",
+      "format_sms_message",
+      "recipient"
+    ],
+    "expected_citations": [
+      "notifications/email_service.py:9",
+      "notifications/sms_service.py:8"
+    ],
+    "should_mention_test": false
+  }
+]
