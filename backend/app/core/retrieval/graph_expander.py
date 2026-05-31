@@ -7,7 +7,7 @@ from app.core.retrieval.intent import QueryIntent
 
 class GraphExpander:
 
-    def __init__(self, graph: nx.DiGraph):
+    def __init__(self, graph: nx.MultiDiGraph):
         self.graph = graph
 
 

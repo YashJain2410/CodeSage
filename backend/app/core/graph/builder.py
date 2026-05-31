@@ -5,7 +5,7 @@ from app.core.parser.import_resolver import ImportResolver
 
 class CallGraphBuilder:
 
-    def build(self, units: list[CodeUnit], resolver: ImportResolver) -> nx.DiGraph:
+    def build(self, units: list[CodeUnit], resolver: ImportResolver) -> nx.MultiDiGraph:
 
         G = nx.MultiDiGraph()
 
@@ -51,7 +51,7 @@ class CallGraphBuilder:
 
         return G
     
-    def link_tests(self, G: nx.DiGraph, resolver: ImportResolver):
+    def link_tests(self, G: nx.MultiDiGraph, resolver: ImportResolver):
 
         test_edges = [
             (u, v)

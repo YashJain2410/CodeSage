@@ -2,7 +2,7 @@ import networkx as nx
 
 class GraphQueries:
 
-    def __init__(self, G: nx.DiGraph):
+    def __init__(self, G: nx.MultiDiGraph):
         self.G = G
 
     def get_callers(self, func_id: str):

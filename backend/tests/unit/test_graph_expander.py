@@ -6,7 +6,7 @@ import networkx as nx
 
 def build_test_graph():
 
-    graph = nx.DiGraph()
+    graph = nx.MultiDiGraph()
 
     # Call graph
     graph.add_edge("api_handler", "login_user")
