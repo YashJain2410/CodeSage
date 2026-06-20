@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 class Settings(BaseSettings):
 
@@ -9,6 +10,7 @@ class Settings(BaseSettings):
 
     # API Keys
     gemini_api_key: str
+    openai_api_key: Optional[str] = str
 
     # Services
     qdrant_url: str = "http://localhost:6333"

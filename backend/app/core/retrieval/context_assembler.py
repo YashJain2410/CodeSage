@@ -12,20 +12,39 @@ class ContextAssembler:
 
     def build_block(self, node_data):
 
-        source = (node_data.get("source") or "")
+        source = node_data.get("source") or ""
+
+        start_line = (
+            node_data.get("start_line")
+            or node_data.get("line_start")
+            or "Unknown"
+        )
+
+        end_line = (
+            node_data.get("end_line")
+            or node_data.get("line_end")
+            or "Unknown"
+        )
+
         return f"""
-Function:
-{node_data.get('qualified_name')}
+    Function:
+    {node_data.get('qualified_name')}
 
-File:
-{node_data.get('filepath')}
+    File:
+    {node_data.get('filepath')}
 
-Docstring:
-{node_data.get('docstring')}
+    Start Line:
+    {start_line}
 
-Source:
-{source[:2000]}
-"""
+    End Line:
+    {end_line}
+
+    Docstring:
+    {node_data.get('docstring')}
+
+    Source:
+    {source[:2000]}
+    """
     
 
     def assemble(self, ranked_nodes, graph):

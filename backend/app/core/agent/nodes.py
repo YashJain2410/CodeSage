@@ -5,6 +5,12 @@ from app.core.retrieval.hybrid import HybridRetriever
 from app.core.retrieval.graph_expander import GraphExpander
 from app.core.retrieval.reranker import CrossEncoderReranker
 from app.core.retrieval.context_assembler import ContextAssembler
+from app.core.llm.factory import get_llm
+from app.core.agent.prompts import (
+    SYSTEM_PROMPT,
+    HUMAN_TEMPLATE,
+    INTENT_SYSTEM_PROMPTS
+)
 
 
 classifier = QueryIntentClassifier()
@@ -135,14 +141,34 @@ def generate_answer_node(
     state: AgentState
 ) -> AgentState:
 
-    # Placeholder until LLM integration
-
-    state["answer"] = (
-        "Answer generation not yet implemented."
+    llm = get_llm(
+        state["model_provider"],
+        state["model_name"],
     )
 
-    state["citations"] = []
+    extra_prompt = INTENT_SYSTEM_PROMPTS.get(
+        state["intent"],
+        ""
+    )
 
+    system_prompt = (
+        SYSTEM_PROMPT
+        + "\n"
+        + extra_prompt
+    )
+
+    user_prompt = HUMAN_TEMPLATE.format(
+        query = state["query"],
+        context = state["assembled_context"],
+    )
+
+    answer = llm.generate(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+
+    state["answer"] = answer
+    state["citations"] = []
     state["confidence"] = 1.0
 
     return state

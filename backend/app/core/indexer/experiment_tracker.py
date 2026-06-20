@@ -9,7 +9,7 @@ class ExperimentTracker:
         mlflow.set_experiment(experiment_name)
 
     
-    def track_indexing_run(self, stats, embed_model):
+    def track_indexing_run(self, stats, embed_model, model_provider = None, model_name = None):
 
         with mlflow.start_run():
 
@@ -17,6 +17,18 @@ class ExperimentTracker:
                 "embedding_model",
                 embed_model
             )
+
+            if model_provider:
+                mlflow.log_param(
+                    "model_provider",
+                    model_provider
+                )
+
+            if model_name:
+                mlflow.log_param(
+                    "model_name",
+                    model_name
+                )
 
             mlflow.log_metric(
                 "units",

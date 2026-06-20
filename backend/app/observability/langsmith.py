@@ -9,6 +9,8 @@ class CodeSageCallbackHandler(BaseCallbackHandler):
         self.chunk_count = 0
         self.token_count = 0
         self.intent_confidence = 0.0
+        self.model_provider = None
+        self.model_name = None
 
 
     def log_retrieval(
@@ -33,3 +35,9 @@ class CodeSageCallbackHandler(BaseCallbackHandler):
 
     def log_confidence(self, confidence: float):
         self.intent_confidence = confidence
+
+
+    def log_model(self, provider: str, model: str):
+        
+        self.model_provider = provider
+        self.model_name = model

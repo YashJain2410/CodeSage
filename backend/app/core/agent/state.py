@@ -18,3 +18,5 @@ class AgentState(TypedDict):
     retry_count: int
     trace_id: str
     graph: nx.MultiDiGraph
+    model_provider: str
+    model_name: str
