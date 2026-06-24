@@ -4,6 +4,9 @@ from rank_bm25 import BM25Okapi
 
 from app.core.indexer.embedder import CodeEmbedder
 from app.core.indexer.qdrant_store import QdrantCodeStore
+from app.observability.metrics import RETRIEVAL_LATENCY, RETRIEVED_DOCUMENTS
+
+import time
 
 
 class HybridRetriever:
@@ -49,7 +52,7 @@ class HybridRetriever:
 
             results.append({
                 "func_id": self.documents[idx]["func_id"],
-                "score": float
+                "score": float(score)
             })
 
         return results
@@ -107,8 +110,22 @@ class HybridRetriever:
             query: str,
             top_k: int = 10
     ):
+        start = time.time()
+        
         bm25_results = self.bm25_search(query, top_k)
         dense_results = self.dense_search(query, top_k)
         fused = self.rrf_fusion(bm25_results, dense_results)
+
+        latency_ms = (
+            time.time() - start
+        ) * 1000
+
+        RETRIEVAL_LATENCY.observe(
+            latency_ms
+        )
+
+        RETRIEVED_DOCUMENTS.observe(
+            len(fused)
+        )
 
         return fused[:top_k]

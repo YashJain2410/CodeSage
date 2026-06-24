@@ -1,3 +1,6 @@
+from app.observability.metrics import CONTEXT_TOKENS
+
+
 class ContextAssembler:
 
     def __init__(self, max_tokens = 12000):
@@ -68,5 +71,9 @@ class ContextAssembler:
             blocks.append(block)
 
             total_tokens += tokens
+
+        CONTEXT_TOKENS.observe(
+            total_tokens
+        )
         
         return "\n\n".join(blocks)

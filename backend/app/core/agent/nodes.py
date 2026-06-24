@@ -11,6 +11,9 @@ from app.core.agent.prompts import (
     HUMAN_TEMPLATE,
     INTENT_SYSTEM_PROMPTS
 )
+from app.observability.metrics import MODEL_USAGE, LLM_LATENCY, CONFIDENCE_SCORE
+
+import time
 
 
 classifier = QueryIntentClassifier()
@@ -110,6 +113,12 @@ def rerank_node(
 
     state["ranked_results"] = ranked
 
+    state["retrieved_func_ids"] = [
+        func_id
+        for func_id, _
+        in ranked
+    ]
+
     return state
 
 
@@ -162,14 +171,33 @@ def generate_answer_node(
         context = state["assembled_context"],
     )
 
+    start = time.time()
+
     answer = llm.generate(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
     )
 
+    latency_ms = (
+        time.time() - start
+    ) * 1000
+
     state["answer"] = answer
     state["citations"] = []
     state["confidence"] = 1.0
+
+    MODEL_USAGE.labels(
+        provider=state["model_provider"],
+        model=state["model_name"]
+    ).inc()
+
+    LLM_LATENCY.observe(
+        latency_ms
+    )
+
+    CONFIDENCE_SCORE.observe(
+        state["confidence"]
+    )
 
     return state
 

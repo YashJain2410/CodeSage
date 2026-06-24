@@ -1,4 +1,6 @@
 from sentence_transformers import CrossEncoder
+from app.observability.metrics import RERANK_LATENCY
+import time
 
 
 class CrossEncoderReranker:
@@ -36,25 +38,35 @@ Source:
 
             node_data = graph.nodes[func_id]
 
-            condidate_text = (
+            candidate_text = (
                 self.build_candidate_text(node_data)
             )
 
             pairs.append(
                 (
                     query,
-                    condidate_text
+                    candidate_text
                 )
             )
 
             valid_nodes.append(func_id)
 
+        start = time.time()
+
         scores = self.model.predict(pairs)
+
+        latency_ms = (
+            time.time() - start
+        ) * 1000
 
         ranked = sorted(
             zip(valid_nodes, scores),
             key = lambda x: x[1],
             reverse = True
+        )
+
+        RERANK_LATENCY.observe(
+            latency_ms
         )
 
         return ranked[:top_k]

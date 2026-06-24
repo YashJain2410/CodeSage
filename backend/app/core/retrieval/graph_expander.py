@@ -3,6 +3,7 @@ from collections import deque
 import networkx as nx
 
 from app.core.retrieval.intent import QueryIntent
+from app.observability.metrics import GRAPH_EXPANSION_SIZE
 
 
 class GraphExpander:
@@ -85,8 +86,13 @@ class GraphExpander:
 
             edge_data = self.graph.get_edge_data(pred, func_id)
 
-            if(edge_data and edge_data.get("edge_type") == "tests"):
-                expanded.add(pred)
+            if edge_data:
+
+                for edge in edge_data.values():
+
+                    if edge.get("edge_type") == "tests":
+                        expanded.add(pred)
+                        break
 
         return expanded
 
@@ -109,5 +115,11 @@ class GraphExpander:
 
         if intent == QueryIntent.ONBOARD:
             return self.expand_onboard(func_id)
+        
+        expanded = self.expand_explain(func_id)
+        
+        GRAPH_EXPANSION_SIZE.observe(
+            len(expanded)
+        )
 
         return self.expand_explain(func_id)

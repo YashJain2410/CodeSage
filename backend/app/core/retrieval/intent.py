@@ -3,7 +3,7 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Literal
 
-from app.observability.metrics import INTENT_CLASSIFICATION_METHOD
+from app.observability.metrics import INTENT_CLASSIFICATION_METHOD, INTENT_COUNT
 
 class QueryIntent(str, Enum):
     BUG = "BUG"
@@ -124,6 +124,10 @@ class QueryIntentClassifier:
         
         INTENT_CLASSIFICATION_METHOD.labels(
             method="llm"
+        ).inc()
+
+        INTENT_COUNT.labels(
+            intent=rule_result.intent.value
         ).inc()
         
         return self.classify_llm(query)
