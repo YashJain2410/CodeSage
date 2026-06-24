@@ -8,15 +8,16 @@ class AgentState(TypedDict):
 
     query: str
     intent: QueryIntent | None
-    seed_results: list
-    expanded_results: list
-    ranked_results: list
+    seed_results: list[str]
+    expanded_results: list[str]
+    ranked_results: list[tuple[str, float]]
     assembled_context: str | None
     answer: str | None
-    citations: list
+    citations: list[str]
     confidence: float
     retry_count: int
     trace_id: str
     graph: nx.MultiDiGraph
     model_provider: str
     model_name: str
+    retrieved_func_ids: list[str]
