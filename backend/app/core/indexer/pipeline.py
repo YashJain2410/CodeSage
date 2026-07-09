@@ -114,6 +114,7 @@ class IndexingPipeline:
         print("Generating embeddings...")
 
         texts = []
+        documents = []
 
         for unit in units:
 
@@ -123,18 +124,27 @@ class IndexingPipeline:
             text = self.embedder.build_text_representation(unit, callers, callees)
             texts.append(text)
 
+            documents.append(
+                {
+                    "func_id": unit.id,
+                    "text": text,
+                }
+            )
+
         embeddings = self.embedder.embed_batch(texts)
 
-        return (units, graph, embeddings)
+        return (units, graph, embeddings, documents)
     
 
     def index_repository(self, repo_path):
 
         self.vector_store.ensure_collection()
 
-        units, graph, embeddings = self.build_index(repo_path)
+        units, graph, embeddings, documents = self.build_index(repo_path)
 
         print("Uploading vectors...")
+        print(f"Units: {len(units)}")
+        print(f"Embeddings: {len(embeddings)}")
 
         self.vector_store.upsert_units(units, embeddings)
 
@@ -154,9 +164,14 @@ class IndexingPipeline:
         )
 
         return {
-            "units": len(units),
-            "nodes": len(graph.nodes),
-            "edges": len(graph.edges),
+            "graph": graph,
+            "units": units,
+            "documents": documents,
+            "stats": {
+                "units": len(units),
+                "nodes": len(graph.nodes),
+                "edges": len(graph.edges),
+            },
         }
     
 

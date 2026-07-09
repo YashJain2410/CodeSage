@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.observability.metrics import INTENT_CLASSIFICATION_METHOD, INTENT_COUNT
+from app.core.llm.factory import get_llm
+from app.core.retrieval.prompts import INTENT_CLASSIFIER_PROMPT
 
 class QueryIntent(str, Enum):
     BUG = "BUG"
@@ -107,27 +109,66 @@ class QueryIntentClassifier:
 
     def classify_llm(self, query: str):
 
-        raise NotImplementedError
+        llm = get_llm(
+            provider="gemini",
+            model_name="gemini-3.5-flash",
+        )
+
+        response = llm.generate(
+            system_prompt="You are an intent classifier",
+            user_prompt=INTENT_CLASSIFIER_PROMPT.format(
+                query = query
+            ),
+        )
+
+        label = response.strip().upper()
+
+        try:
+            intent = QueryIntent(label)
+        
+        except KeyError:
+            intent = QueryIntent.EXPLAIN
+
+        return IntentResult(
+            intent = intent,
+            confidence = 0.6,
+            method = "llm",
+        )
     
 
-    def classify(self, query: str):
+    def classify(self, query: str) -> IntentResult:
 
         rule_result = self.classify_rules(query)
 
-        if(rule_result and rule_result.confidence >= 0.8):
+        if rule_result and rule_result.confidence >= 0.8:
 
             INTENT_CLASSIFICATION_METHOD.labels(
                 method="rules"
             ).inc()
 
+            INTENT_COUNT.labels(
+                intent=rule_result.intent.value
+            ).inc()
+
             return rule_result
-        
+
+        try:
+            llm_result = self.classify_llm(query)
+
+        except Exception:
+
+            llm_result = IntentResult(
+                intent=QueryIntent.EXPLAIN,
+                confidence=0.3,
+                method="rules",
+            )
+
         INTENT_CLASSIFICATION_METHOD.labels(
             method="llm"
         ).inc()
 
         INTENT_COUNT.labels(
-            intent=rule_result.intent.value
+            intent=llm_result.intent.value
         ).inc()
-        
-        return self.classify_llm(query)
+
+        return llm_result

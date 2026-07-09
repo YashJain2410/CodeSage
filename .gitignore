@@ -1,0 +1,135 @@
+# =====================================================
+# Python
+# =====================================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+share/python-wheels/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+.venv/*
+env/
+ENV/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =====================================================
+# FastAPI
+# =====================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Alembic
+alembic/versions/*.pyc
+
+# =====================================================
+# Node / Next.js
+# =====================================================
+node_modules/
+
+.next/
+out/
+
+# Package manager
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Lockfiles (keep ONE of these depending on your package manager)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# =====================================================
+# TypeScript
+# =====================================================
+*.tsbuildinfo
+
+# =====================================================
+# Coverage
+# =====================================================
+coverage/
+.nyc_output/
+
+# =====================================================
+# VS Code
+# =====================================================
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# =====================================================
+# JetBrains
+# =====================================================
+.idea/
+
+# =====================================================
+# macOS
+# =====================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =====================================================
+# Windows
+# =====================================================
+Thumbs.db
+Desktop.ini
+
+# =====================================================
+# Docker
+# =====================================================
+docker-compose.override.yml
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# =====================================================
+# Misc
+# =====================================================
+*.swp
+*.swo
+*~
+tmp/
+temp/

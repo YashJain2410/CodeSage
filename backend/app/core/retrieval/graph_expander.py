@@ -122,4 +122,4 @@ class GraphExpander:
             len(expanded)
         )
 
-        return self.expand_explain(func_id)
+        return expanded

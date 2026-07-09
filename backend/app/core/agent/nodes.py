@@ -12,12 +12,12 @@ from app.core.agent.prompts import (
     INTENT_SYSTEM_PROMPTS
 )
 from app.observability.metrics import MODEL_USAGE, LLM_LATENCY, CONFIDENCE_SCORE
+from app.core.runtime.application_state import app_state
 
 import time
 
 
 classifier = QueryIntentClassifier()
-retriever = HybridRetriever()
 reranker = CrossEncoderReranker()
 assembler = ContextAssembler()
 
@@ -47,7 +47,7 @@ def retrieve_node(
     state: AgentState
 ) -> AgentState:
 
-    results = retriever.search(
+    results = app_state.retriever.search(
         query=state["query"]
     )
 

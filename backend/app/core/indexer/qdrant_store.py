@@ -103,6 +103,11 @@ class QdrantCodeStore:
                 )
             )
 
+        if not points:
+            raise ValueError(
+                "No vectors generated for indexing."
+            )
+
         self.client.upsert(
             collection_name = self.collection_name,
             points = points

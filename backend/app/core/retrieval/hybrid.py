@@ -19,16 +19,30 @@ class HybridRetriever:
         self.documents = []
 
 
-    def build_bm25_index(self, documents):
-        
+    def build_bm25_index(
+        self,
+        documents: list[dict],
+    ) -> None:
+
+        if not documents:
+            raise ValueError(
+                "No documents provided for BM25 indexing."
+            )
+
         self.documents = documents
 
-        tokenized = [
-            doc["text"].lower().split()
-            for doc in documents
+        tokenized_documents = [
+            document["text"].lower().split()
+            for document in documents
         ]
 
-        self.bm25 = BM25Okapi(tokenized)
+        self.bm25 = BM25Okapi(
+            tokenized_documents
+        )
+
+        print(
+            f"Built BM25 index with {len(documents)} documents."
+        )
 
 
     def bm25_search(self, query: str, top_k: int = 10):
