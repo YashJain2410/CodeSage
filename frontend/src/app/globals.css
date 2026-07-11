@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #EAE8F5;
+  --foreground: #3D2F6B;
+  --card: #F8F7FF;
+  --card-foreground: #3D2F6B;
+  --primary: #7C65C1;
+  --border: #DCD6F2;
+  --muted: #746A94;
+}
+
+.dark {
+  --background: #1A1625;
+  --foreground: #F8F7FF;
+  --card: #2D2440;
+  --card-foreground: #F8F7FF;
+  --primary: #B8A9E0;
+  --border: #3D3358;
+  --muted: #B8A9E0;
+}
+
+* {
+  box-sizing: border-box;
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-duration: 300ms;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #7C65C1;
+  border-radius: 3px;
+}
+
+.gradient-border-focus {
+  position: relative;
+  background: linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(120deg, #7C65C1, #8B5CF6, #B8A9E0, #7C65C1) border-box;
+  background-size: 100% 100%, 260% 260%;
+  border: 2px solid transparent;
+}
+
+.gradient-border-focus:focus-within {
+  animation: gradientBorder 3s ease infinite;
+  box-shadow: 0 18px 80px rgba(124, 101, 193, 0.32);
+}
+
+.shimmer-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+}
+
+.shimmer-button:hover::after {
+  animation: shimmer 0.85s ease forwards;
+}
+
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-lavender-100 dark:focus-visible:ring-offset-darkBg;
+}

@@ -133,3 +133,7 @@ redis_data/
 *~
 tmp/
 temp/
+
+
+masterplan.txt
+.embedding_cache/

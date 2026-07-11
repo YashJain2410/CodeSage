@@ -13,6 +13,11 @@ from app.api.routes.metrics import router as metrics_router
 from contextlib import asynccontextmanager
 from app.core.runtime.startup import initialize_application
 from app.config import get_settings
+from app.api.routes.graph import router as graph_router
+from app.api.routes.index import router as index_router
+from fastapi.middleware.cors import CORSMiddleware
+# from app.api.middleware.logging import LoggingMiddleware
+# from app.api.middleware.auth import AuthenticationMiddleware
 
 settings = get_settings()
 
@@ -38,38 +43,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# app.add_middleware(LoggingMiddleware)
+# app.add_middleware(AuthenticationMiddleware)
+# app.add_middleware(LoggingMiddleware)
+
 app.include_router(query_router)
 app.include_router(metrics_router)
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    request_id = str(uuid.uuid4())
-
-    structlog.contextvars.bind_contextvars(request_id = request_id)
-
-    start_time = time.time()
-
-    response = await call_next(request)
-
-    duration = time.time() - start_time
-
-    log.info(
-        "request",
-        method = request.method,
-        path = request.url.path,
-        status_code = response.status_code,
-        duration = round(duration, 4),
-    )
-
-    REQUEST_COUNT.labels(
-        method = request.method, 
-        endpoint = request.url.path,
-        status = response.status_code,
-    ).inc()
-
-    REQUEST_LATENCY.observe(duration)
-
-    return response
+app.include_router(graph_router)
+app.include_router(index_router)
 
 @app.get("/")
 def root(config: ConfigDep):
