@@ -10,7 +10,10 @@ router = APIRouter(
 )
 
 
-@router.post("")
+@router.post(
+        "",
+        deprecated=True,
+)
 def index_repository(
     request: IndexRepositoryRequest
 ):

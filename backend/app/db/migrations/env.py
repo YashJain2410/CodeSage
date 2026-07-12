@@ -5,12 +5,26 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from app.db.session import Base
+from app.db.base import Base
 from app.db import models
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    # Alembic uses the synchronous psycopg driver
+    database_url = database_url.replace(
+        "postgresql+asyncpg://",
+        "postgresql://"
+    )
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
