@@ -10,6 +10,7 @@ asyncpg==0.31.0
 attrs==26.1.0
 billiard==4.2.4
 blinker==1.9.0
+build==1.5.1
 cachetools==7.1.4
 celery==5.6.3
 certifi==2026.5.20
@@ -95,6 +96,7 @@ ormsgpack==1.12.2
 packaging==26.2
 pandas==2.3.3
 pillow==12.3.0
+pip-tools==7.5.3
 pluggy==1.6.0
 portalocker==3.2.0
 prettytable==3.18.0
@@ -112,11 +114,13 @@ pydantic-settings==2.14.1
 pydantic_core==2.46.4
 Pygments==2.20.0
 pyparsing==3.3.2
+pyproject_hooks==1.2.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
+python-multipart==0.0.32
 pytz==2026.2
 PyYAML==6.0.2
 qdrant-client==1.18.0

@@ -12,6 +12,8 @@ from qdrant_client.models import (
 
 from qdrant_client.models import ( FilterSelector )
 
+from app.config import get_settings
+
 import hashlib
 
 class QdrantCodeStore:
@@ -21,6 +23,8 @@ class QdrantCodeStore:
         url="http://localhost:6333",
         collection_name="codesage"
     ):
+        
+        settings = get_settings()
 
         if url == ":memory:":
 
@@ -31,7 +35,8 @@ class QdrantCodeStore:
         else:
 
             self.client = QdrantClient(
-                url=url
+                url=url,
+                api_key=settings.qdrant_api_key,
             )
 
         self.collection_name = collection_name

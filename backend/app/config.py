@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Services
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: Optional[str] = None
     redis_url: str = "redis://localhost:6379"
     database_url: str
 
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     embed_model: str = "microsoft/unixcoder-base"
     embed_batch_size: int = 32
 
-    repo_path: str
+    repo_path: Path = Path("/tmp/workspaces")
 
 
 @lru_cache
