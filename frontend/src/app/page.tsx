@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, useInView } from 'framer-motion';
-import { ArrowUpRight, BarChart3, Bot, Check, ChevronDown, FolderOpen, GitBranch, Loader2, Search, Zap } from 'lucide-react';
+import { ArrowUpRight, BarChart3, Bot, Check, ChevronDown, FileArchive, GitBranch, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';
@@ -20,12 +20,10 @@ function Reveal({ children, className = '' }: { children: ReactNode; className?:
 export default function LandingPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const [repo, setRepo] = useState('');
-  const [sourceType, setSourceType] = useState<'git' | 'local'>('git');
-  const [localFiles, setLocalFiles] = useState<File[]>([]);
+  const [archive, setArchive] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { indexProgress, llmProvider, localFolderName, localFolderFileCount, setCurrentRepo, setLocalFolder, setLlmProvider, setRepoId, setIndexStatus, setIndexProgress } = useCodeSageStore();
+  const { indexProgress, llmProvider, setCurrentRepo, setLlmProvider, setRepoId, setIndexStatus, setIndexProgress } = useCodeSageStore();
 
   const providers: { value: LlmProvider; label: string; description: string }[] = [
     { value: 'openai', label: 'OpenAI', description: 'Best all-round code reasoning' },
@@ -41,7 +39,7 @@ export default function LandingPage() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        inputRef.current?.focus();
+        inputRef.current?.click();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -50,15 +48,15 @@ export default function LandingPage() {
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    const target = sourceType === 'git' ? repo.trim() : localFolderName ? `local://${localFolderName}` : '';
-    if (!target) return;
+    if (!archive || !archive.name.toLowerCase().endsWith('.zip')) return;
     setLoading(true);
-    setCurrentRepo(target);
+    setUploadError(null);
+    setCurrentRepo(archive.name);
     try {
       setIndexStatus('indexing');
       setIndexProgress({ status: 'indexing', files_indexed: 0, total_files: 0, current_phase: 'Building repository intelligence', progress_percent: 25, message: 'Indexing repository…' });
-      const result = await api.indexRepository(target);
-      setRepoId(result.repo_path);
+      const result = await api.uploadRepository(archive);
+      setRepoId(result.repository_id);
       setIndexStatus('done');
       setIndexProgress({ status: 'done', files_indexed: result.nodes, total_files: result.nodes, current_phase: 'Ready', progress_percent: 100, message: `Indexed ${result.nodes} symbols and ${result.edges} relationships.` });
       router.push('/chat');
@@ -72,17 +70,16 @@ export default function LandingPage() {
         progress_percent: 0,
         message: error instanceof Error ? error.message : 'Unable to start indexing'
       });
+      setUploadError(error instanceof Error ? error.message : 'Unable to upload the ZIP archive.');
     } finally {
       setLoading(false);
     }
   };
 
-  const onFolderSelect = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    setLocalFiles(files);
-    const firstPath = files[0]?.webkitRelativePath || files[0]?.name || '';
-    const folderName = firstPath.split('/')[0] || (files.length ? 'Selected folder' : null);
-    setLocalFolder(folderName, files.length);
+  const onArchiveSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setArchive(file);
+    setUploadError(file && !file.name.toLowerCase().endsWith('.zip') ? 'Only ZIP files are currently supported.' : null);
   };
 
   const words = ['Your', 'Codebase,', 'Finally', 'Understood.'];
@@ -114,25 +111,15 @@ export default function LandingPage() {
             ))}
           </h1>
           <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="mt-7 max-w-2xl text-lg font-medium leading-8 text-lavender-200 md:text-xl">
-            Index any GitHub repo and chat with your code. Powered by RAG, call graph traversal, and semantic search.
+            Upload a repository archive and chat with your code. Powered by RAG, call graph traversal, and semantic search.
           </motion.p>
 
           <motion.form initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.58 }} onSubmit={onSubmit} className="mt-10 w-full max-w-4xl">
             <div className="mb-4 flex flex-col gap-3 rounded-4xl border border-white/15 bg-white/10 p-3 text-left shadow-2xl shadow-black/10 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
               <div className="flex rounded-full bg-black/15 p-1 dark:bg-white/10">
-                {[
-                  { value: 'git', label: 'GitHub URL' },
-                  { value: 'local', label: 'Local Folder' }
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setSourceType(option.value as 'git' | 'local')}
-                    className={`rounded-full px-4 py-2 text-sm font-bold ${sourceType === option.value ? 'bg-lavender-100 text-deep shadow-lg' : 'text-lavender-100 hover:bg-white/10'}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                <span className="rounded-full bg-lavender-100 px-4 py-2 text-sm font-bold text-deep shadow-lg">ZIP Upload</span>
+                <button type="button" disabled title="GitHub import is not yet supported by the backend." className="cursor-not-allowed rounded-full px-4 py-2 text-sm font-bold text-lavender-100/45">GitHub URL</button>
+                <button type="button" disabled title="Folder import is not yet supported by the backend." className="cursor-not-allowed rounded-full px-4 py-2 text-sm font-bold text-lavender-100/45">Local Folder</button>
               </div>
 
               <label className="relative flex min-w-[220px] items-center gap-3 rounded-full bg-lavender-100 px-4 py-2 text-deep shadow-sm">
@@ -152,47 +139,27 @@ export default function LandingPage() {
             </div>
 
             <div className="gradient-border-focus flex min-h-16 flex-col gap-3 rounded-[2rem] p-2 shadow-2xl shadow-black/20 sm:flex-row sm:items-center sm:rounded-full">
-              {sourceType === 'git' ? (
-                <>
-                  <Search className="ml-4 hidden h-5 w-5 text-primary sm:block" />
-                  <input
-                    ref={inputRef}
-                    value={repo}
-                    onChange={(event) => setRepo(event.target.value)}
-                    placeholder="https://github.com/username/repo"
-                    className="min-w-0 flex-1 bg-transparent px-4 py-3 font-mono text-sm text-deep outline-none placeholder:text-deep/45 dark:text-white dark:placeholder:text-white/45 sm:px-2 sm:text-base"
-                    aria-label="Repository URL"
-                  />
-                </>
-              ) : (
-                <>
-                  <input ref={folderInputRef} type="file" multiple className="hidden" onChange={onFolderSelect} aria-label="Upload local code folder" {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} />
-                  <button
-                    type="button"
-                    onClick={() => folderInputRef.current?.click()}
-                    className="focus-ring ml-1 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-lavender-100 px-5 text-sm font-black text-deep hover:-translate-y-0.5 hover:shadow-lg dark:bg-white dark:text-deep"
-                  >
-                    <FolderOpen className="h-5 w-5 text-primary" />
-                    Choose Folder
-                  </button>
-                  <div className="min-w-0 flex-1 px-3 text-left">
-                    <p className="truncate font-mono text-sm font-bold text-deep dark:text-white">{localFolderName || 'No local folder selected'}</p>
-                    <p className="text-xs font-semibold text-deep/55 dark:text-white/55">{localFolderFileCount ? `${localFolderFileCount} files ready to index` : 'Select a project folder from local storage'}</p>
-                  </div>
-                </>
-              )}
+              <input ref={inputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={onArchiveSelect} aria-label="Upload repository ZIP" />
+              <button type="button" onClick={() => inputRef.current?.click()} className="focus-ring ml-1 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-lavender-100 px-5 text-sm font-black text-deep hover:-translate-y-0.5 hover:shadow-lg dark:bg-white dark:text-deep">
+                <FileArchive className="h-5 w-5 text-primary" />Choose ZIP
+              </button>
+              <div className="min-w-0 flex-1 px-3 text-left">
+                <p className="truncate font-mono text-sm font-bold text-deep dark:text-white">{archive?.name || 'No ZIP archive selected'}</p>
+                <p className="text-xs font-semibold text-deep/55 dark:text-white/55">{archive ? `${(archive.size / 1024 / 1024).toFixed(1)} MB ready to index` : 'Select a repository ZIP from local storage'}</p>
+              </div>
               <button
                 type="submit"
-                disabled={loading || (sourceType === 'git' ? !repo.trim() : !localFolderName)}
+                disabled={loading || !archive || !!uploadError}
                 className="shimmer-button focus-ring relative inline-flex h-12 shrink-0 items-center justify-center gap-2 overflow-hidden rounded-full bg-primary px-5 text-sm font-bold text-white hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 sm:px-7"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : sourceType === 'local' ? <Check className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
-                <span className="hidden sm:inline">{loading ? 'Indexing...' : sourceType === 'local' ? 'Upload & Index' : 'Index Repository'}</span>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                <span className="hidden sm:inline">{loading ? 'Indexing...' : 'Upload & Index'}</span>
               </button>
             </div>
             <p className="mt-3 text-center text-sm font-semibold text-lavender-200">
               Provider: {selectedProvider.label} · {selectedProvider.description}
             </p>
+            {uploadError ? <p role="alert" className="mt-3 rounded-2xl bg-rose-500/20 px-4 py-3 text-sm font-semibold text-rose-100">{uploadError}</p> : null}
             {indexProgress ? (
               <div className="mt-5 rounded-3xl border border-white/15 bg-white/10 p-4 text-left backdrop-blur-md">
                 <div className="mb-2 flex justify-between text-sm font-semibold text-lavender-100">

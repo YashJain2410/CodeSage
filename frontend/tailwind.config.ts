@@ -25,8 +25,8 @@ const config: Config = {
         '5xl': '2.5rem'
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'Inter', 'sans-serif'],
-        mono: ['var(--font-jetbrains)', 'JetBrains Mono', 'monospace']
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)']
       },
       keyframes: {
         float: {

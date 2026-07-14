@@ -81,6 +81,10 @@ def expand_graph_node(
         else:
             func_id = result
 
+        print("Graph nodes:", len(graph.nodes))
+        print("First node:", next(iter(graph.nodes)))
+        print("Retrieved id:", func_id)
+
         expanded.extend(
             expander.expand(
                 func_id,

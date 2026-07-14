@@ -81,3 +81,8 @@ class Repository(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+    indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )

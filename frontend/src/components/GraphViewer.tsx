@@ -37,6 +37,12 @@ function typeFor(node: GraphNode): ViewKind {
   const type = node.node_type?.toLowerCase() || 'function';
   return type.includes('class') ? 'class' : type.includes('database') ? 'database' : type.includes('api') ? 'api' : type.includes('external') ? 'external' : 'function';
 }
+function pathsMatch(left?: string, right?: string) {
+  if (!left || !right) return false;
+  const normalize = (path: string) => path.replace(/\\/g, '/').replace(/^\.\//, '');
+  const a = normalize(left); const b = normalize(right);
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
 function layout(nodes: ViewNode[], edges: Edge[]) {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   graph.setGraph({ rankdir: 'TB', ranksep: 90, nodesep: 36, marginx: 30, marginy: 30 });
@@ -69,18 +75,18 @@ function createGraph(data: GraphData, expanded: Set<string>, search: string, sho
 }
 
 export function GraphViewer({ search = '', showTests = true }: { search?: string; showTests?: boolean }) {
-  const { data, isLoading, error } = useQuery({ queryKey: ['repository-graph'], queryFn: api.getGraph, staleTime: 5 * 60_000 });
+  const { data, isLoading, error, refetch } = useQuery({ queryKey: ['repository-graph'], queryFn: api.getGraph, staleTime: 5 * 60_000 });
   const [expanded, setExpanded] = useState(new Set<string>()); const [selected, setSelected] = useState<ViewNode | null>(null); const [pinned, setPinned] = useState(new Set<string>());
   const selectedCitation = useCodeSageStore((state) => state.selectedCitation);
   const model = useMemo(() => data ? createGraph(data, expanded, search, showTests) : { nodes: [], edges: [] }, [data, expanded, search, showTests]);
   const [nodes, setNodes, onNodesChange] = useNodesState<ViewNode>([]); const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   useEffect(() => { setNodes(layout(model.nodes.map((node) => ({ ...node, data: { ...node.data, pinned: pinned.has(node.id) } })), model.edges)); setEdges(model.edges); }, [model, pinned, setEdges, setNodes]);
-  useEffect(() => { if (!selectedCitation || !data) return; const match = data.nodes.find((node) => node.filepath === selectedCitation.filepath); if (!match) return; const folder = (match.filepath || '').split('/').slice(0, -1).join('/') || 'root'; setExpanded((current) => new Set([...current, `folder:${folder}`, `file:${match.filepath}`])); }, [data, selectedCitation]);
-  useEffect(() => { if (!selectedCitation) return; const node = nodes.find((candidate) => candidate.data.source?.filepath === selectedCitation.filepath); if (node) setSelected(node); }, [nodes, selectedCitation]);
+  useEffect(() => { if (!selectedCitation || !data) return; const match = data.nodes.find((node) => pathsMatch(node.filepath, selectedCitation.filepath)); if (!match) return; const folder = (match.filepath || '').split('/').slice(0, -1).join('/') || 'root'; setExpanded((current) => new Set([...current, `folder:${folder}`, `file:${match.filepath}`])); }, [data, selectedCitation]);
+  useEffect(() => { if (!selectedCitation) return; const node = nodes.find((candidate) => pathsMatch(candidate.data.source?.filepath, selectedCitation.filepath)); if (node) setSelected(node); }, [nodes, selectedCitation]);
   useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setSelected(null); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, []);
   const onNodeClick = useCallback((_: React.MouseEvent, node: ViewNode) => { setSelected(node); if (['folder', 'file'].includes(node.data.kind)) setExpanded((current) => { const next = new Set(current); next.has(node.id) ? next.delete(node.id) : next.add(node.id); return next; }); }, []);
   if (isLoading) return <div className="grid h-full place-items-center rounded-4xl bg-offwhite text-sm font-bold dark:bg-darkCard">Loading repository architecture…</div>;
-  if (error) return <div className="grid h-full place-items-center rounded-4xl bg-offwhite p-8 text-center dark:bg-darkCard"><p>Unable to load the repository graph: {error.message}</p></div>;
+  if (error) return <div className="grid h-full place-items-center rounded-4xl bg-offwhite p-8 text-center dark:bg-darkCard"><div><p>Unable to load the repository graph: {error.message}</p><button onClick={() => void refetch()} className="mt-4 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">Try again</button></div></div>;
   return <div className="relative h-full overflow-hidden rounded-4xl border border-white/70 bg-offwhite shadow-xl dark:border-darkBorder dark:bg-darkCard">
     <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} nodeTypes={nodeTypes} fitView minZoom={0.1} maxZoom={2} proOptions={{ hideAttribution: true }}>
       <Background variant={BackgroundVariant.Dots} gap={18} size={1} className="opacity-50" /><Controls /><MiniMap zoomable pannable className="!bg-white/80 dark:!bg-darkBg/80" />

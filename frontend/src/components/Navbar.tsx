@@ -38,8 +38,8 @@ export function Navbar() {
           isLandingTop
             ? 'border-white/10 bg-[#1A1625]/18 shadow-none'
             : scrolled
-            ? 'border-white/80 bg-offwhite/90 shadow-xl shadow-deep/10 dark:border-lavender-300/10 dark:bg-[#241B3B]/92 dark:shadow-black/20'
-            : 'border-white/55 bg-lavender-50/78 shadow-lg shadow-deep/5 dark:border-lavender-300/10 dark:bg-[#241B3B]/72'
+            ? 'border-white/80 bg-offwhite/90 shadow-xl shadow-deep/10 dark:border-lavender-300/10 dark:!bg-[#241B3B] dark:shadow-black/20'
+            : 'border-white/55 bg-lavender-50/78 shadow-lg shadow-deep/5 dark:border-lavender-300/10 dark:!bg-[#241B3B]'
         }`}
       >
         <Link href="/" className="focus-ring flex items-center gap-3 rounded-full pr-3 font-bold">

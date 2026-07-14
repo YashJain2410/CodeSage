@@ -18,5 +18,6 @@ def get_graph():
         )
     
     return GraphSerializer.to_dict(
-        app_state.graph
+        app_state.graph,
+        app_state.repo_path,
     )

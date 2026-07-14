@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 import time
-import uuid
+from uuid import uuid4
 import structlog
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
@@ -16,7 +16,9 @@ from app.config import get_settings
 from app.api.routes.graph import router as graph_router
 from app.api.routes.index import router as index_router
 from fastapi.middleware.cors import CORSMiddleware
-from app.repositories.router import router as repository_router
+# from app.repositories.router import router as repository_router
+from app.api.routes.repositories import router as repositories_router
+# from app.api.routes.upload import router as upload_router
 # from app.api.middleware.logging import LoggingMiddleware
 # from app.api.middleware.auth import AuthenticationMiddleware
 
@@ -33,9 +35,7 @@ async def lifespan(app: FastAPI):
     #     repo_path="/Users/yashjain/Data/CodeSage/backend/tests/fixtures/sample_repo"
     # )
 
-    initialize_application(
-        repo_path=settings.repo_path
-    )
+    initialize_application()
 
     yield
 
@@ -63,7 +63,9 @@ app.include_router(query_router)
 app.include_router(metrics_router)
 app.include_router(graph_router)
 app.include_router(index_router)
-app.include_router(repository_router)
+# app.include_router(repository_router)
+app.include_router(repositories_router)
+# app.include_router(upload_router)
 
 @app.get("/")
 def root(config: ConfigDep):

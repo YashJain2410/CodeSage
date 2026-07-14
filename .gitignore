@@ -137,3 +137,9 @@ temp/
 
 masterplan.txt
 .embedding_cache/
+
+backend/workspaces/*
+!backend/workspaces/.gitkeep
+
+backend/storage/repositories/*
+!backend/storage/repositories/.gitkeep

@@ -2,15 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { CircleCheck, GitBranch, X } from 'lucide-react';
 import { ChatPanel } from '@/components/ChatPanel';
-import { CodeViewer } from '@/components/CodeViewer';
 import { useCodeSageStore } from '@/store/useCodeSageStore';
 
 export default function ChatPage() {
-  const { indexStatus, indexProgress } = useCodeSageStore();
+  const { indexStatus, indexProgress, currentRepo } = useCodeSageStore();
   const [showBanner, setShowBanner] = useState(true);
-  const [tab, setTab] = useState<'chat' | 'code'>('chat');
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -38,16 +36,14 @@ export default function ChatPage() {
         </div>
       ) : null}
 
-      <div className="mx-auto mb-4 flex w-fit rounded-full bg-white p-1 shadow-sm dark:bg-darkCard lg:hidden">
-        {(['chat', 'code'] as const).map((value) => (
-          <button key={value} onClick={() => setTab(value)} className={`rounded-full px-6 py-2 font-bold capitalize ${tab === value ? 'bg-primary text-white' : 'text-deep dark:text-white'}`}>{value}</button>
-        ))}
-      </div>
+      {indexStatus === 'done' ? (
+        <section className="mx-auto mb-5 flex max-w-7xl flex-col gap-3 rounded-3xl border border-white/70 bg-offwhite p-5 shadow-lg dark:border-darkBorder dark:bg-darkCard sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0"><p className="text-xs font-black uppercase tracking-widest text-[var(--muted)]">Repository dashboard</p><h1 className="truncate text-2xl font-black">{currentRepo || 'Indexed repository'}</h1></div>
+          <div className="flex flex-wrap gap-2 text-sm font-bold"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-300"><CircleCheck className="h-4 w-4" />Ready</span><span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-2 text-primary"><GitBranch className="h-4 w-4" />{indexProgress?.files_indexed ?? 0} nodes</span></div>
+        </section>
+      ) : null}
 
-      <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[55%_45%]">
-        <div className={tab === 'chat' ? 'block' : 'hidden lg:block'}><ChatPanel /></div>
-        <div className={tab === 'code' ? 'block' : 'hidden lg:block'}><CodeViewer /></div>
-      </div>
+      <div className="mx-auto max-w-5xl"><ChatPanel /></div>
     </div>
   );
 }

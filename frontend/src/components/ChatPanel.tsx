@@ -1,7 +1,7 @@
 'use client';
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUp, Bot, Loader2 } from 'lucide-react';
+import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowUp, Bot, Copy, Loader2, RotateCcw } from 'lucide-react';
 import api from '@/lib/api';
 import { useCodeSageStore } from '@/store/useCodeSageStore';
 import { CodeCitation, parseCitations } from './CodeCitation';
@@ -22,7 +22,7 @@ const intentLabel = {
 };
 
 export function ChatPanel() {
-  const { messages, addMessage, updateLastMessage, pendingChatPrompt, setPendingChatPrompt, repoId } = useCodeSageStore();
+  const { messages, addMessage, updateLastMessage, pendingChatPrompt, setPendingChatPrompt, repoId, llmProvider } = useCodeSageStore();
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -63,7 +63,8 @@ export function ChatPanel() {
     let responseCitations: { filepath: string; line: number }[] = [];
     try {
       if (repoId) {
-        const response = await api.query(text);
+        const provider = llmProvider === 'google' ? 'gemini' : llmProvider;
+        const response = await api.query(repoId, text, provider);
         accumulated = response.answer;
         responseCitations = response.citations.flatMap((citation) => parseCitations(citation).map(({ filepath, line }) => ({ filepath, line })));
         updateLastMessage(accumulated, { intent: response.intent as Message['intent'] });
@@ -79,7 +80,7 @@ export function ChatPanel() {
     } finally {
       setStreaming(false);
     }
-  }, [addMessage, input, repoId, streaming, updateLastMessage]);
+  }, [addMessage, input, llmProvider, repoId, streaming, updateLastMessage]);
 
   return (
     <section className="flex h-full min-h-[640px] flex-col rounded-4xl border border-white/70 bg-offwhite p-4 shadow-xl dark:border-darkBorder dark:bg-darkCard">
@@ -93,7 +94,7 @@ export function ChatPanel() {
             </div>
           </div>
         ) : (
-          messages.map((message) => <ChatMessage key={message.id} message={message} streaming={streaming && message === messages[messages.length - 1]} />)
+          messages.map((message, index) => <ChatMessage key={message.id} message={message} streaming={streaming && message === messages[messages.length - 1]} onRetry={() => setInput(messages[index - 1]?.role === 'user' ? messages[index - 1].content : '')} />)
         )}
         <div ref={bottomRef} />
       </div>
@@ -124,7 +125,7 @@ export function ChatPanel() {
   );
 }
 
-const ChatMessage = memo(function ChatMessage({ message, streaming }: { message: Message; streaming: boolean }) {
+const ChatMessage = memo(function ChatMessage({ message, streaming, onRetry }: { message: Message; streaming: boolean; onRetry: () => void }) {
   const assistant = message.role === 'assistant';
   return (
     <article className={`mb-6 flex ${assistant ? 'justify-start' : 'justify-end'}`}>
@@ -133,9 +134,10 @@ const ChatMessage = memo(function ChatMessage({ message, streaming }: { message:
         <div>
           {assistant && message.intent ? <div className={`mb-2 inline-flex rounded-full px-3 py-1 text-xs font-bold ${intentStyle[message.intent]}`}>{intentLabel[message.intent]}</div> : null}
           <div className={`rounded-3xl px-5 py-4 leading-7 shadow-sm ${assistant ? 'bg-white text-deep dark:bg-darkBg dark:text-white' : 'bg-deep text-white'}`}>
-            {message.content}
+            <AnswerContent content={message.content} />
             {streaming ? <span className="ml-1 animate-blink">▊</span> : null}
           </div>
+          {assistant && message.content ? <div className="mt-2 flex gap-2"><button onClick={() => navigator.clipboard.writeText(message.content)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted)] hover:bg-primary/10"><Copy className="h-3 w-3" />Copy</button><button onClick={onRetry} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted)] hover:bg-primary/10"><RotateCcw className="h-3 w-3" />Retry</button></div> : null}
           {message.citations.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {message.citations.map((citation) => <CodeCitation key={`${citation.filepath}:${citation.line}`} {...citation} />)}
@@ -146,3 +148,71 @@ const ChatMessage = memo(function ChatMessage({ message, streaming }: { message:
     </article>
   );
 });
+
+function AnswerContent({ content }: { content: string }) {
+  const parts = content.split(/(```[\s\S]*?```)/g);
+  return <div className="answer-content">{parts.flatMap((part, index) => {
+    if (part.startsWith('```')) {
+      const [first, ...lines] = part.slice(3, -3).split('\n');
+      return <pre key={`code-${index}`} className="my-3 overflow-x-auto rounded-xl bg-black/90 p-3 font-mono text-xs leading-6 text-lavender-100"><code data-language={first}>{lines.join('\n')}</code></pre>;
+    }
+    return renderMarkdownBlocks(part, index);
+  })}</div>;
+}
+
+function renderMarkdownBlocks(markdown: string, offset: number): ReactNode[] {
+  const lines = markdown.split('\n');
+  const blocks: ReactNode[] = [];
+
+  for (let line = 0; line < lines.length;) {
+    const value = lines[line].trim();
+    if (!value) { line += 1; continue; }
+    if (/^---+$/.test(value)) { blocks.push(<hr key={`rule-${offset}-${line}`} className="my-5 border-white/10 dark:border-white/10" />); line += 1; continue; }
+
+    const heading = value.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const text = inlineMarkdown(heading[2]);
+      const key = `heading-${offset}-${line}`;
+      if (heading[1].length === 1) blocks.push(<h2 key={key} className="mb-3 mt-5 text-xl font-bold leading-7">{text}</h2>);
+      else if (heading[1].length === 2) blocks.push(<h3 key={key} className="mb-2 mt-5 text-lg font-bold leading-6">{text}</h3>);
+      else blocks.push(<h4 key={key} className="mb-2 mt-4 text-base font-semibold">{text}</h4>);
+      line += 1;
+      continue;
+    }
+
+    const unordered = value.match(/^[-*+]\s+(.+)$/);
+    const ordered = value.match(/^\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const items: ReactNode[] = [];
+      const pattern = unordered ? /^[-*+]\s+(.+)$/ : /^\d+[.)]\s+(.+)$/;
+      while (line < lines.length) {
+        const item = lines[line].trim().match(pattern);
+        if (!item) break;
+        items.push(<li key={`${offset}-${line}`}>{inlineMarkdown(item[1])}</li>);
+        line += 1;
+      }
+      const className = 'my-3 space-y-1 pl-5 marker:text-primary';
+      blocks.push(unordered ? <ul key={`list-${offset}-${line}`} className={`list-disc ${className}`}>{items}</ul> : <ol key={`list-${offset}-${line}`} className={`list-decimal ${className}`}>{items}</ol>);
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (line < lines.length) {
+      const next = lines[line].trim();
+      if (!next || /^---+$/.test(next) || /^(#{1,3})\s+/.test(next) || /^[-*+]\s+/.test(next) || /^\d+[.)]\s+/.test(next)) break;
+      paragraph.push(next);
+      line += 1;
+    }
+    blocks.push(<p key={`paragraph-${offset}-${line}`} className="my-3 first:mt-0">{inlineMarkdown(paragraph.join(' '))}</p>);
+  }
+
+  return blocks;
+}
+
+function inlineMarkdown(value: string): ReactNode[] {
+  return value.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith('`') && part.endsWith('`')) return <code key={index} className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[0.9em] text-primary">{part.slice(1, -1)}</code>;
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={index} className="font-bold">{part.slice(2, -2)}</strong>;
+    return part;
+  });
+}

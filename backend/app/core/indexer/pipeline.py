@@ -62,6 +62,7 @@ class IndexingPipeline:
 
     def parse_repository(self, repo_path):
 
+        repo = Path(repo_path).resolve()
         files = self.discover_files(repo_path)
 
         all_units = []
@@ -81,10 +82,8 @@ class IndexingPipeline:
                     
                     source = f.read()
 
-                units = parser.parse(
-                    source,
-                    filepath
-                )
+                relative_path = Path(filepath).resolve().relative_to(repo).as_posix()
+                units = parser.parse(source, relative_path)
 
                 all_units.extend(units)
 
@@ -138,40 +137,37 @@ class IndexingPipeline:
 
     def index_repository(self, repo_path):
 
-        self.vector_store.ensure_collection()
+        self.vector_store.recreate_collection()
 
         units, graph, embeddings, documents = self.build_index(repo_path)
 
         print("Uploading vectors...")
-        print(f"Units: {len(units)}")
-        print(f"Embeddings: {len(embeddings)}")
 
-        self.vector_store.upsert_units(units, embeddings)
+        self.vector_store.upsert_units(
+            units,
+            embeddings,
+        )
 
         print("Indexing complete")
 
         stats = {
             "units": len(units),
             "nodes": len(graph.nodes),
-            "edges": len(graph.edges)
+            "edges": len(graph.edges),
         }
 
         self.tracker.track_indexing_run(
             stats,
             "microsoft/unixcoder-base",
             model_provider="gemini",
-            model_name="gemini-3.5-flash"
+            model_name="gemini-3.5-flash",
         )
 
         return {
             "graph": graph,
             "units": units,
             "documents": documents,
-            "stats": {
-                "units": len(units),
-                "nodes": len(graph.nodes),
-                "edges": len(graph.edges),
-            },
+            "stats": stats,
         }
     
 

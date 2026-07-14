@@ -164,24 +164,26 @@ class QdrantCodeStore:
         return results.points
     
 
-    def delete_by_filepath(self, filepath):
+    def recreate_collection(self):
 
-        self.client.delete(
-            collection_name = self.collection_name,
+        collections = self.client.get_collections()
 
-            points_selector = FilterSelector(
-                filter = Filter(
-                    must = [
-                        FieldCondition(
-                            key = "filepath",
+        existing = [
+            c.name
+            for c in collections.collections
+        ]
 
-                            match = MatchValue(
-                                value = filepath
-                            )
-                        )
-                    ]
-                )
+        if self.collection_name in existing:
+            self.client.delete_collection(
+                self.collection_name
             )
+
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            vectors_config=VectorParams(
+                size=768,
+                distance=Distance.COSINE,
+            ),
         )
 
-        print("Deleted vectors")
+        print("Fresh collection created")
