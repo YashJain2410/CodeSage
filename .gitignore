@@ -143,3 +143,6 @@ backend/workspaces/*
 
 backend/storage/repositories/*
 !backend/storage/repositories/.gitkeep
+
+# Allow frontend lib directory
+!frontend/src/lib/
