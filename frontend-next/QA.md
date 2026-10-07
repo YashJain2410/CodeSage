@@ -1,6 +1,6 @@
 # Verification record
 
-Checked on 7 October 2026. Changes are confined to `frontend-next/`; the pre-existing frontend, backend, and root configuration were not edited.
+Checked on 7 October 2026. This record covers the original frontend verification. Its scope is `frontend-next/`; later repository documentation changes are separate.
 
 ## Automated checks
 
@@ -8,7 +8,7 @@ Checked on 7 October 2026. Changes are confined to `frontend-next/`; the pre-exi
 - `npm run lint`: passed without warnings.
 - `npm test`: all nine protocol tests passed. Covers SSE frame boundaries, split UTF-8, CRLF and final frames, citation extraction, both graph formats, and Prometheus calculations.
 - `npm run build`: passed; landing page and all eight workspace routes generated successfully, with an additional not-found page.
-- `npm audit --omit=dev`: zero production vulnerabilities. Development-only lint dependencies have five transitive high-severity advisory entries; see README.
+- `npm audit --omit=dev`: zero production vulnerabilities. Development-only lint dependencies have five transitive high-severity advisory entries; this is the result recorded during that verification, not a current audit guarantee.
 
 ## Browser checks
 

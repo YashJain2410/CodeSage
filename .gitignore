@@ -1,148 +1,111 @@
-# =====================================================
-# Python
-# =====================================================
+# Python environments, packages, and tooling
 __pycache__/
 *.py[cod]
 *$py.class
-
 *.so
 .Python
-build/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-share/python-wheels/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
 .venv/
 venv/
-.venv/*
 env/
 ENV/
-
-# Python tooling
+.eggs/
+*.egg
+*.egg-info/
+build/
+dist/
+wheels/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .pyre/
-.coverage
-.coverage.*
-htmlcov/
 .cache/
-
-# Jupyter
 .ipynb_checkpoints/
 
-# =====================================================
-# FastAPI
-# =====================================================
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
-logs/
-
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# Alembic
-alembic/versions/*.pyc
-
-# =====================================================
-# Node / Next.js
-# =====================================================
+# JavaScript / Next.js (commit package-manager lockfiles)
 node_modules/
-
 .next/
 out/
-
-# Package manager
+.vercel/
+.turbo/
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Lockfiles (keep ONE of these depending on your package manager)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
-
-# =====================================================
-# TypeScript
-# =====================================================
-*.tsbuildinfo
-
-# =====================================================
-# Coverage
-# =====================================================
+# Test and generated reports
+.coverage
+.coverage.*
+htmlcov/
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
+blob-report/
+evaluation_results/
 
-# =====================================================
-# VS Code
-# =====================================================
-.vscode/
-!.vscode/extensions.json
-!.vscode/settings.json
+# Credentials and local configuration (keep public examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+/.aws/
 
-# =====================================================
-# JetBrains
-# =====================================================
-.idea/
-
-# =====================================================
-# macOS
-# =====================================================
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# =====================================================
-# Windows
-# =====================================================
-Thumbs.db
-Desktop.ini
-
-# =====================================================
-# Docker
-# =====================================================
-docker-compose.override.yml
-
-# Docker volumes
+# Runtime data, models, and experiments
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.embedding_cache/
+mlruns/
+mlartifacts/
+qdrant_storage/
 postgres_data/
 redis_data/
-
-# =====================================================
-# Misc
-# =====================================================
-*.swp
-*.swo
-*~
-tmp/
-temp/
-
-
-masterplan.txt
-.embedding_cache/
-
+*.pt
+*.pth
+*.safetensors
 backend/workspaces/*
 !backend/workspaces/.gitkeep
-
 backend/storage/repositories/*
 !backend/storage/repositories/.gitkeep
 
-# Allow frontend lib directory
-!frontend/src/lib/
+# Private plans, build prompts, drafts, and agent-local state
+# Store future private documents in .local-docs/.
+.local-docs/
+/plans/
+/drafts/
+/masterplan*.txt
+/Complete-Plan.txt
+/CodeSage*Build*Prompt.md
+[Ii]mplementation[-_ ][Pp]lan*.md
+IMPLEMENTATION[-_ ]PLAN*.md
+[Ii]mplementation[-_ ][Pp]lan*.txt
+IMPLEMENTATION[-_ ]PLAN*.txt
+/.codex/
+/.agents/
+
+# Editor / operating-system files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# Local containers, logs, and temporary output
+docker-compose.override.yml
+docker-compose.override.yaml
+*.log
+logs/
+tmp/
+temp/

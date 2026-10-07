@@ -17,7 +17,7 @@ Verified by reading `backend/app/main.py`, its mounted route modules, schemas, s
 
 Current graph nodes contain `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, and `end_line`. Edges contain `source`, `target`, `edge_type`, and `resolved`. The adapter preserves test/external indicators and calculates incoming edge counts when absent.
 
-`POST /index` does not return a repository ID. The client uses `local-runtime` as its explicit handle for the global runtime. The current query service ignores `repository_id` when choosing its graph; therefore only the most recently indexed live repository can be active. Earlier entries are marked for re-indexing. There is no server repository-list endpoint, so the list is labeled “Indexed in this browser”.
+`POST /index` is deprecated and currently has a startup signature mismatch; its response contract below does not establish successful execution. It does not return a repository ID. The client uses `local-runtime` as its explicit handle for the global runtime. The current query service ignores `repository_id` when choosing its graph; therefore only the most recently indexed live repository can be active. Earlier entries are marked for re-indexing. There is no server repository-list endpoint, so the list is labeled “Indexed in this browser”.
 
 The checked-in query route passes `call_graph=...`; `QueryService` obtains query context from application state. This frontend sends the validated request contract but does not claim to validate that entire Python execution path without running the backend services.
 
@@ -119,4 +119,4 @@ Report your actual thresholds rather than adopting UI defaults implicitly. The b
 
 ## Scope
 
-The plan defines a local, personal application without authentication. This frontend does not create account, billing, or team endpoints. Provider credentials remain in the Python environment. Authentication, multi-user authorization, conversation memory, and server-side repository history require explicit future API contracts.
+The current application is a local, personal workspace without authentication. This frontend does not create account, billing, or team endpoints. Provider credentials remain in the Python environment. Authentication, multi-user authorization, conversation memory, and server-side repository history require explicit future API contracts.
