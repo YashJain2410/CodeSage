@@ -1,0 +1,2866 @@
+{
+  "files": {
+    "app.py": "\"\"\"Application entry points for login, registration, checkout, and refund flows.\"\"\"\n\nfrom __future__ import annotations\n\nfrom auth.middleware import authorize_request, require_authentication\nfrom auth.service import authenticate_user, refresh_session, request_password_reset, reset_password\nfrom models import User\nfrom orders.service import checkout_handler as checkout_order, create_order, refund_order\nfrom users.service import register_user_profile\nfrom utils.decorators import audit_action, log_execution, validate_request\n\n\n@log_execution\n@audit_action(\"app.login\")\n@validate_request((\"identifier\", \"password\"))\ndef login_handler(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Handle the login request by validating input and delegating to auth.service.\"\"\"\n\n    return authenticate_user(payload)\n\n\n@log_execution\n@audit_action(\"app.register\")\n@validate_request((\"email\", \"username\", \"password\"))\ndef register_handler(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Create a user account and return the stored identity for onboarding flows.\"\"\"\n\n    user = register_user_profile(payload)\n    return {\"user_id\": user.id, \"email\": user.email}\n\n\n@log_execution\n@audit_action(\"app.checkout\")\n@validate_request((\"email\", \"items\", \"amount\"))\ndef checkout_handler(payload: dict[str, object]) -> dict[str, object]:\n    \"\"\"Perform checkout by resolving the user and forwarding the request to the order service.\"\"\"\n\n    user = User(id=\"u_checkout\", email=str(payload[\"email\"]), username=\"checkout\", password_hash=\"\")\n    return checkout_order(user, list(payload[\"items\"]), payload[\"amount\"], str(payload.get(\"currency\", \"USD\")))\n\n\n@log_execution\n@audit_action(\"app.refund\")\n@validate_request((\"order_id\", \"amount\"))\ndef refund_handler(payload: dict[str, object]) -> dict[str, object]:\n    \"\"\"Handle a refund request and return the result from the order service.\"\"\"\n\n    result = refund_order(str(payload[\"order_id\"]), payload[\"amount\"])\n    return {\"transaction_id\": result.transaction_id, \"success\": result.success}\n\n\n@log_execution\ndef password_reset_handler(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Trigger the password reset request and the follow-up password update flow.\"\"\"\n\n    request = request_password_reset(payload)\n    reset = reset_password({\"email\": payload[\"email\"], \"new_password\": payload[\"new_password\"]})\n    return {\"reset_token\": request[\"reset_token\"], \"status\": reset[\"status\"]}\n\n\n@log_execution\ndef token_refresh_handler(authorization_header: str, *, user: User) -> dict[str, str]:\n    \"\"\"Validate bearer auth and mint a fresh access token for the current user.\"\"\"\n\n    authorize_request(authorization_header, user=user)\n    return refresh_session(require_authentication(authorization_header, user=user))\n",
+    "auth/middleware.py": "\"\"\"Middleware-style auth helpers for request inspection and authorization.\"\"\"\n\nfrom __future__ import annotations\n\nfrom auth.tokens import decode_token, get_token_subject, is_token_expired\nfrom models import TokenPayload, User\nfrom utils.decorators import require_auth\nfrom utils.errors import AuthenticationError\n\n\ndef extract_bearer_token(authorization_header: str) -> str:\n    \"\"\"Extract the bearer token from an HTTP authorization header.\"\"\"\n\n    prefix = \"Bearer \"\n    if not authorization_header.startswith(prefix):\n        raise AuthenticationError(\"Bearer header required\")\n    return authorization_header[len(prefix) :]\n\n\n@require_auth\ndef require_authentication(authorization_header: str, *, user: User) -> TokenPayload:\n    \"\"\"Validate a bearer token and return its payload for downstream request handling.\"\"\"\n\n    token = extract_bearer_token(authorization_header)\n    payload = decode_token(token)\n    if is_token_expired(payload):\n        raise AuthenticationError(\"access token expired\")\n    return payload\n\n\ndef authorize_request(authorization_header: str, *, user: User) -> dict[str, str]:\n    \"\"\"Return an authorization summary that handlers can use for routing and audit logs.\"\"\"\n\n    payload = require_authentication(authorization_header, user=user)\n    return {\"subject\": get_token_subject(authorization_header[len(\"Bearer \") :]), \"token_type\": payload.token_type}\n",
+    "auth/service.py": "\"\"\"Core authentication workflows for login, refresh, and password reset.\"\"\"\n\nfrom __future__ import annotations\n\nimport hashlib\n\nfrom auth.tokens import create_access_token, create_refresh_token, decode_token, is_token_expired\nfrom auth.validators import normalize_identifier, validate_login_payload, validate_password_reset_payload\nfrom models import User\nfrom users.service import lookup_user_for_auth\nfrom utils.decorators import audit_action, log_execution, retry_on_failure\nfrom utils.errors import AuthenticationError, ValidationError, raise_validation_error\nfrom utils.logging import audit_event\n\n\ndef _password_hash(password: str) -> str:\n    \"\"\"Hash a plaintext password for the fixture repository's deterministic comparisons.\"\"\"\n\n    return hashlib.sha256(password.encode(\"utf-8\")).hexdigest()\n\n\n@log_execution\n@audit_action(\"auth.login\")\n@retry_on_failure()\ndef authenticate_user(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Validate login payload, resolve a user, verify the password, and issue tokens.\"\"\"\n\n    credentials = validate_login_payload(payload)\n    user = lookup_user_for_auth(credentials[\"identifier\"])\n    if user.password_hash != _password_hash(credentials[\"password\"]):\n        raise AuthenticationError(\"password does not match\")\n    access_token = create_access_token(user)\n    refresh_token = create_refresh_token(user)\n    audit_event(\"login\", user.id, \"authenticated\")\n    return {\"access_token\": access_token, \"refresh_token\": refresh_token, \"user_id\": user.id}\n\n\n@log_execution\n@audit_action(\"auth.refresh\")\ndef refresh_session(token: str) -> dict[str, str]:\n    \"\"\"Decode a refresh token, check expiry, and mint a new access token for the subject.\"\"\"\n\n    payload = decode_token(token)\n    if payload.token_type != \"refresh\":\n        raise AuthenticationError(\"refresh token required\")\n    if is_token_expired(payload):\n        raise AuthenticationError(\"refresh token expired\")\n    user = User(id=payload.subject, email=f\"{payload.subject}@fixtures.example\", username=payload.subject, password_hash=\"\")\n    access_token = create_access_token(user)\n    return {\"access_token\": access_token, \"subject\": payload.subject}\n\n\n@log_execution\ndef request_password_reset(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Validate a password reset request and return a refresh token-style reset handle.\"\"\"\n\n    data = validate_password_reset_payload(payload)\n    user = lookup_user_for_auth(data[\"email\"])\n    reset_token = create_refresh_token(user)\n    return {\"reset_token\": reset_token, \"email\": data[\"email\"]}\n\n\n@log_execution\ndef reset_password(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Replace a user's password after validating the reset request and new secret length.\"\"\"\n\n    data = validate_password_reset_payload(payload)\n    user = lookup_user_for_auth(data[\"email\"])\n    if not user.is_active:\n        raise ValidationError(\"inactive accounts cannot reset passwords\")\n    user.password_hash = _password_hash(data[\"new_password\"])\n    audit_event(\"password_reset\", user.id, \"password updated\")\n    return {\"user_id\": user.id, \"status\": \"reset\"}\n",
+    "auth/tokens.py": "\"\"\"Token creation and parsing utilities for auth flows.\"\"\"\n\nfrom __future__ import annotations\n\nimport hashlib\nimport time\n\nfrom config import get_service_config, load_settings\nfrom models import TokenPayload, User\nfrom utils.errors import AuthenticationError\n\n\ndef _sign_token(subject: str, issued_at: int, expires_at: int, token_type: str) -> str:\n    \"\"\"Create the deterministic signature used by access and refresh token strings.\"\"\"\n\n    raw = f\"{subject}:{issued_at}:{expires_at}:{token_type}:codesage\"\n    return hashlib.sha256(raw.encode(\"utf-8\")).hexdigest()[:16]\n\n\ndef create_access_token(user: User, ttl_seconds: int | None = None) -> str:\n    \"\"\"Create a signed access token for a user session and downstream middleware checks.\"\"\"\n\n    settings = load_settings()\n    issued_at = int(time.time())\n    expires_at = issued_at + (ttl_seconds or settings.token_ttl_seconds)\n    signature = _sign_token(user.id, issued_at, expires_at, \"access\")\n    return f\"access.{user.id}.{issued_at}.{expires_at}.{signature}\"\n\n\ndef create_refresh_token(user: User) -> str:\n    \"\"\"Create a longer-lived refresh token for session renewal and password reset flows.\"\"\"\n\n    settings = get_service_config()\n    issued_at = int(time.time())\n    expires_at = issued_at + int(settings[\"token_ttl_seconds\"]) * 4\n    signature = _sign_token(user.id, issued_at, expires_at, \"refresh\")\n    return f\"refresh.{user.id}.{issued_at}.{expires_at}.{signature}\"\n\n\ndef decode_token(token: str) -> TokenPayload:\n    \"\"\"Parse a token string into claims that services can inspect for identity and expiry.\"\"\"\n\n    parts = token.split(\".\")\n    if len(parts) != 5:\n        raise AuthenticationError(\"token format is invalid\")\n    token_type, subject, issued_at, expires_at, signature = parts\n    expected = _sign_token(subject, int(issued_at), int(expires_at), token_type)\n    if expected != signature:\n        raise AuthenticationError(\"token signature is invalid\")\n    return TokenPayload(\n        subject=subject,\n        issued_at=int(issued_at),\n        expires_at=int(expires_at),\n        token_type=token_type,\n    )\n\n\ndef is_token_expired(payload: TokenPayload) -> bool:\n    \"\"\"Check whether the token has passed its expiry boundary.\"\"\"\n\n    return int(time.time()) > payload.expires_at\n\n\ndef get_token_subject(token: str) -> str:\n    \"\"\"Extract the subject from a valid token string for quick lookups and trace output.\"\"\"\n\n    return decode_token(token).subject\n",
+    "auth/validators.py": "\"\"\"Auth payload validation helpers.\"\"\"\n\nfrom __future__ import annotations\n\nfrom utils.errors import ValidationError, raise_validation_error\n\n\ndef normalize_identifier(identifier: str) -> str:\n    \"\"\"Normalize usernames and email addresses for login and registration lookups.\"\"\"\n\n    return identifier.strip().lower()\n\n\ndef validate_login_payload(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Validate the login payload before the service resolves a user and checks a password.\"\"\"\n\n    identifier = normalize_identifier(str(payload.get(\"identifier\", \"\")))\n    password = str(payload.get(\"password\", \"\")).strip()\n    if not identifier:\n        raise_validation_error(\"identifier\", \"is required\")\n    if len(password) < 8:\n        raise_validation_error(\"password\", \"must contain at least 8 characters\")\n    return {\"identifier\": identifier, \"password\": password}\n\n\ndef validate_password_reset_payload(payload: dict[str, object]) -> dict[str, str]:\n    \"\"\"Validate the password reset payload before a token is exchanged for a new secret.\"\"\"\n\n    email = normalize_identifier(str(payload.get(\"email\", \"\")))\n    new_password = str(payload.get(\"new_password\", \"\")).strip()\n    if not email:\n        raise_validation_error(\"email\", \"is required\")\n    if len(new_password) < 10:\n        raise ValidationError(\"new_password must contain at least 10 characters\")\n    return {\"email\": email, \"new_password\": new_password}\n",
+    "config.py": "\"\"\"Application settings helpers for the sample web app.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass AppSettings:\n    \"\"\"Container for the core service settings used across auth, payments, and notifications.\"\"\"\n\n    service_name: str\n    environment: str\n    token_ttl_seconds: int\n    retry_limit: int\n    support_email: str\n\n\ndef load_settings() -> AppSettings:\n    \"\"\"Load the application defaults that drive token lifetime, retry policy, and support routing.\"\"\"\n\n    return AppSettings(\n        service_name=\"CodeSage Fixture Shop\",\n        environment=\"test\",\n        token_ttl_seconds=900,\n        retry_limit=3,\n        support_email=\"support@fixtures.example\",\n    )\n\n\ndef get_service_config() -> dict[str, str | int]:\n    \"\"\"Expose a serializable settings view for modules that need endpoints and thresholds.\"\"\"\n\n    settings = load_settings()\n    return {\n        \"service_name\": settings.service_name,\n        \"environment\": settings.environment,\n        \"token_ttl_seconds\": settings.token_ttl_seconds,\n        \"retry_limit\": settings.retry_limit,\n        \"support_email\": settings.support_email,\n        \"stripe_currency\": \"USD\",\n        \"invoice_prefix\": \"INV\",\n    }\n",
+    "models.py": "\"\"\"Domain models shared by the sample application.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass, field\nfrom datetime import datetime, timezone\n\n\n@dataclass\nclass User:\n    \"\"\"Represent an application user with authentication and billing identity.\"\"\"\n\n    id: str\n    email: str\n    username: str\n    password_hash: str\n    is_active: bool = True\n    roles: list[str] = field(default_factory=lambda: [\"customer\"])\n\n    def display_name(self) -> str:\n        \"\"\"Return the most readable label for login screens, notifications, and audits.\"\"\"\n\n        return self.username or self.email.split(\"@\")[0]\n\n\n@dataclass\nclass Order:\n    \"\"\"Represent a checkout request, its line items, and the current order status.\"\"\"\n\n    id: str\n    user_id: str\n    items: list[dict[str, object]]\n    total_amount: int\n    currency: str = \"USD\"\n    status: str = \"pending\"\n\n    def line_count(self) -> int:\n        \"\"\"Count the number of item lines that should be included in invoices and emails.\"\"\"\n\n        return len(self.items)\n\n\n@dataclass\nclass Invoice:\n    \"\"\"Represent a generated billing document for a completed order.\"\"\"\n\n    invoice_id: str\n    order_id: str\n    user_email: str\n    amount_due: int\n    currency: str\n    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n\n    def amount_with_tax(self, tax_rate: float = 0.0) -> int:\n        \"\"\"Return the rounded total used by invoice rendering and receipt emails.\"\"\"\n\n        return int(round(self.amount_due * (1 + tax_rate)))\n\n\n@dataclass\nclass PaymentResult:\n    \"\"\"Represent the outcome of a payment or refund request.\"\"\"\n\n    success: bool\n    transaction_id: str\n    amount: int\n    message: str\n\n    def is_successful(self) -> bool:\n        \"\"\"Return whether the payment flow finished in a reusable success state.\"\"\"\n\n        return self.success and bool(self.transaction_id)\n\n\n@dataclass\nclass TokenPayload:\n    \"\"\"Represent the encoded claims stored inside access and refresh tokens.\"\"\"\n\n    subject: str\n    issued_at: int\n    expires_at: int\n    token_type: str\n    issuer: str = \"codesage\"\n\n\n@dataclass\nclass NotificationResult:\n    \"\"\"Represent the delivery state for email and SMS notifications.\"\"\"\n\n    channel: str\n    recipient: str\n    delivered: bool\n    detail: str\n",
+    "notifications/email_service.py": "\"\"\"Email notification helpers for receipts and password reset flows.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import Invoice\nfrom utils.decorators import log_execution\n\n\ndef build_email_message(subject: str, body: str, recipient: str) -> dict[str, str]:\n    \"\"\"Build an email payload used by receipt, alert, and reset notifications.\"\"\"\n\n    return {\"subject\": subject, \"body\": body, \"recipient\": recipient}\n\n\n@log_execution\ndef send_receipt_email(invoice: Invoice, recipient: str) -> dict[str, str]:\n    \"\"\"Send the receipt email for a completed order and return the message payload.\"\"\"\n\n    message = build_email_message(\n        subject=f\"Receipt for {invoice.invoice_id}\",\n        body=f\"Amount due: {invoice.amount_due} {invoice.currency}\",\n        recipient=recipient,\n    )\n    return message\n\n\n@log_execution\ndef send_password_reset_email(recipient: str, reset_token: str) -> dict[str, str]:\n    \"\"\"Send a password reset email that contains a reset token for auth workflows.\"\"\"\n\n    return build_email_message(\"Reset your password\", f\"Token: {reset_token}\", recipient)\n",
+    "notifications/sms_service.py": "\"\"\"SMS notification helpers for order updates and payment failures.\"\"\"\n\nfrom __future__ import annotations\n\nfrom utils.decorators import audit_action, log_execution\n\n\ndef format_sms_message(message: str) -> str:\n    \"\"\"Format an SMS body so order updates and payment alerts remain concise.\"\"\"\n\n    return message.strip()[:160]\n\n\n@log_execution\n@audit_action(\"notifications.sms\")\ndef send_order_update_sms(phone_number: str, message: str) -> dict[str, str]:\n    \"\"\"Send a short order-status SMS and return the delivery envelope.\"\"\"\n\n    return {\"phone_number\": phone_number, \"message\": format_sms_message(message), \"status\": \"sent\"}\n",
+    "orders/repository.py": "\"\"\"Order persistence helpers for the in-memory fixture store.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import Order\nfrom utils.decorators import audit_action, cache_result\nfrom utils.errors import ValidationError\n\n\n_ORDERS: dict[str, Order] = {}\n\n\n@cache_result\ndef get_order_by_id(order_id: str) -> Order:\n    \"\"\"Return a stored order by identifier for checkout and refund flows.\"\"\"\n\n    if order_id not in _ORDERS:\n        raise ValidationError(\"unknown order id\")\n    return _ORDERS[order_id]\n\n\n@audit_action(\"orders.create\")\ndef create_order_record(order: Order) -> Order:\n    \"\"\"Persist a new order record and return the stored order state.\"\"\"\n\n    _ORDERS[order.id] = order\n    return order\n\n\ndef update_order_status(order_id: str, status: str) -> Order:\n    \"\"\"Update a stored order status after payment, refund, or cancellation changes.\"\"\"\n\n    order = get_order_by_id(order_id)\n    order.status = status\n    return order\n",
+    "orders/service.py": "\"\"\"Order workflow orchestration for checkout, cancellation, and refund paths.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import Invoice, Order, PaymentResult, User\nfrom notifications.email_service import send_receipt_email\nfrom notifications.sms_service import send_order_update_sms\nfrom payments.invoices import generate_invoice\nfrom payments.stripe import charge_card, refund_charge\nfrom payments.validators import validate_amount, validate_invoice_items\nfrom orders.repository import create_order_record, update_order_status\nfrom utils.decorators import audit_action, log_execution, measure_timing\nfrom utils.errors import PaymentError, ValidationError\nfrom utils.logging import audit_event\n\n\ndef _build_order(user: User, items: list[dict[str, object]], amount: int) -> Order:\n    \"\"\"Build an order object before persisting it and sending it to payment.\"\"\"\n\n    return Order(id=f\"ord_{user.id}_{len(items)}\", user_id=user.id, items=items, total_amount=amount)\n\n\n@log_execution\n@audit_action(\"orders.create\")\n@measure_timing\ndef create_order(user: User, items: list[dict[str, object]], amount: object, currency: str = \"USD\") -> Order:\n    \"\"\"Validate a new order request, persist it, and return the created order.\"\"\"\n\n    validated_amount = validate_amount(amount)\n    validated_items = validate_invoice_items(items)\n    order = _build_order(user, validated_items, validated_amount)\n    order.currency = currency\n    stored = create_order_record(order)\n    audit_event(\"order_created\", user.id, stored.id)\n    return stored\n\n\n@log_execution\n@audit_action(\"orders.checkout\")\ndef checkout_handler(user: User, items: list[dict[str, object]], amount: object, currency: str = \"USD\") -> dict[str, object]:\n    \"\"\"Create an order, charge the card, generate an invoice, and notify the buyer.\"\"\"\n\n    order = create_order(user, items, amount, currency)\n    payment = charge_card(user, amount, currency)\n    if not payment.success:\n        raise PaymentError(\"payment did not complete\")\n    invoice = generate_invoice(order, payment)\n    send_receipt_email(invoice, recipient=user.email)\n    send_order_update_sms(\"5550100\", f\"Order {order.id} is confirmed\")\n    update_order_status(order.id, \"paid\")\n    return {\"order_id\": order.id, \"invoice_id\": invoice.invoice_id, \"transaction_id\": payment.transaction_id}\n\n\n@log_execution\ndef refund_order(order_id: str, amount: object) -> PaymentResult:\n    \"\"\"Refund a stored order, update the status, and return the refund result.\"\"\"\n\n    normalized_amount = validate_amount(amount)\n    order = update_order_status(order_id, \"refund_pending\")\n    result = refund_charge(f\"txn_{order.id}\", normalized_amount)\n    if not result.success:\n        raise ValidationError(\"refund failed\")\n    update_order_status(order.id, \"refunded\")\n    return result\n",
+    "payments/invoices.py": "\"\"\"Invoice generation and delivery helpers for paid orders.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import Invoice, Order, PaymentResult\nfrom notifications.email_service import send_receipt_email\nfrom utils.decorators import audit_action, log_execution\nfrom utils.errors import PaymentError\n\n\ndef calculate_invoice_total(items: list[dict[str, object]]) -> int:\n    \"\"\"Compute the invoice amount from line items for orders and refunds.\"\"\"\n\n    total = 0\n    for item in items:\n        total += int(item.get(\"amount\", 0))\n    return total\n\n\n@log_execution\n@audit_action(\"invoices.generate\")\ndef generate_invoice(order: Order, payment: PaymentResult) -> Invoice:\n    \"\"\"Create an invoice for a paid order and hand it to the receipt notification flow.\"\"\"\n\n    if not payment.success:\n        raise PaymentError(\"payment must succeed before an invoice can be generated\")\n    invoice_total = calculate_invoice_total(order.items)\n    invoice = Invoice(\n        invoice_id=f\"inv_{order.id}\",\n        order_id=order.id,\n        user_email=str(order.user_id),\n        amount_due=invoice_total,\n        currency=order.currency,\n    )\n    send_receipt_email(invoice, recipient=order.user_id)\n    return invoice\n\n\ndef send_invoice_receipt(invoice: Invoice) -> dict[str, str]:\n    \"\"\"Return a simple delivery acknowledgment for invoice emails.\"\"\"\n\n    return {\"invoice_id\": invoice.invoice_id, \"status\": \"sent\"}\n",
+    "payments/retry.py": "\"\"\"Retry helpers for payment operations that can fail transiently.\"\"\"\n\nfrom __future__ import annotations\n\nimport time\nfrom typing import Any, Callable, TypeVar\n\nfrom utils.decorators import retry_on_failure\nfrom utils.errors import PaymentError, ValidationError\n\n\nT = TypeVar(\"T\")\n\n\ndef should_retry(error: Exception) -> bool:\n    \"\"\"Return whether a payment error looks transient and should be attempted again.\"\"\"\n\n    return not isinstance(error, ValidationError)\n\n\n@retry_on_failure(max_attempts=3)\ndef retry_payment_operation(operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:\n    \"\"\"Execute a payment operation with retry semantics and light backoff.\"\"\"\n\n    try:\n        return operation(*args, **kwargs)\n    except Exception as error:\n        if not should_retry(error):\n            raise PaymentError(str(error))\n        time.sleep(0.01)\n        return operation(*args, **kwargs)\n",
+    "payments/stripe.py": "\"\"\"Stripe adapter functions for charges, refunds, and customer creation.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import PaymentResult, User\nfrom payments.retry import retry_payment_operation\nfrom payments.validators import normalize_payment_amount, validate_currency\nfrom utils.decorators import audit_action, ensure_not_none, log_execution\nfrom utils.errors import PaymentError\nfrom utils.logging import audit_event\n\n\ndef create_stripe_customer(user: User) -> str:\n    \"\"\"Create a stable customer reference for a stored user account.\"\"\"\n\n    return f\"cus_{user.id}\"\n\n\n@log_execution\n@audit_action(\"payments.charge\")\n@ensure_not_none(\"amount\")\ndef charge_card(user: User, amount: object, currency: str = \"USD\") -> PaymentResult:\n    \"\"\"Validate a charge request, execute the payment, and return the transaction outcome.\"\"\"\n\n    normalized_amount = normalize_payment_amount(amount)\n    normalized_currency = validate_currency(currency)\n\n    def _charge() -> PaymentResult:\n        customer_id = create_stripe_customer(user)\n        if normalized_amount > 500000:\n            raise PaymentError(\"charge amount exceeds the fixture limit\")\n        transaction_id = f\"txn_{customer_id}_{normalized_amount}\"\n        audit_event(\"charge\", user.id, transaction_id)\n        return PaymentResult(success=True, transaction_id=transaction_id, amount=normalized_amount, message=normalized_currency)\n\n    return retry_payment_operation(_charge)\n\n\n@log_execution\n@audit_action(\"payments.refund\")\ndef refund_charge(transaction_id: str, amount: object) -> PaymentResult:\n    \"\"\"Validate a refund request and return the refund result for the original charge.\"\"\"\n\n    normalized_amount = normalize_payment_amount(amount)\n    if not transaction_id:\n        raise PaymentError(\"transaction_id is required\")\n    if normalized_amount <= 0:\n        raise PaymentError(\"refund amount must be positive\")\n    return PaymentResult(success=True, transaction_id=f\"refund_{transaction_id}\", amount=normalized_amount, message=\"refunded\")\n",
+    "payments/validators.py": "\"\"\"Validation helpers for payment, refund, and invoice inputs.\"\"\"\n\nfrom __future__ import annotations\n\nfrom utils.errors import ValidationError, raise_validation_error\n\n\ndef validate_amount(amount: object) -> int:\n    \"\"\"Validate a charge or refund amount before it reaches Stripe or invoice math.\"\"\"\n\n    amount_int = int(amount)\n    if amount_int <= 0:\n        raise_validation_error(\"amount\", \"must be greater than zero\")\n    return amount_int\n\n\ndef validate_invoice_items(items: list[dict[str, object]]) -> list[dict[str, object]]:\n    \"\"\"Validate line items that will be included in invoice totals and receipts.\"\"\"\n\n    if not isinstance(items, list):\n        raise ValidationError(\"items must be a list\")\n    if len(items) == 0:\n        raise_validation_error(\"items\", \"cannot be empty\")\n    for item in items:\n        if \"amount\" not in item:\n            raise_validation_error(\"amount\", \"missing from invoice item\")\n    return items\n\n\ndef validate_currency(currency: str) -> str:\n    \"\"\"Validate the invoice currency so downstream providers use a supported code.\"\"\"\n\n    normalized = currency.strip().upper()\n    if normalized not in {\"USD\", \"EUR\", \"GBP\"}:\n        raise_validation_error(\"currency\", \"unsupported currency\")\n    return normalized\n\n\ndef normalize_payment_amount(amount: object) -> int:\n    \"\"\"Normalize amounts that arrive as strings or decimal-like integers.\"\"\"\n\n    return validate_amount(amount)\n",
+    "tests/test_auth.py": "\"\"\"Auth workflow tests that exercise real login, refresh, and reset functions.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport sys\n\nimport pytest\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nfrom auth.service import authenticate_user, refresh_session, request_password_reset, reset_password\nfrom auth.tokens import create_refresh_token\nfrom auth.validators import validate_login_payload, validate_password_reset_payload\nfrom users.repository import get_user_by_email\n\n\ndef test_validate_login_payload_normalizes_identifier() -> None:\n    \"\"\"Validate that login identifiers are normalized before auth lookup.\"\"\"\n\n    payload = validate_login_payload({\"identifier\": \" Alice@Example.com \", \"password\": \"password\"})\n    assert payload[\"identifier\"] == \"alice@example.com\"\n\n\ndef test_authenticate_user_success() -> None:\n    \"\"\"Authenticate an existing fixture user and return access and refresh tokens.\"\"\"\n\n    result = authenticate_user({\"identifier\": \"alice@example.com\", \"password\": \"password\"})\n    assert result[\"user_id\"] == \"u_1\"\n    assert result[\"access_token\"].startswith(\"access.\")\n    assert result[\"refresh_token\"].startswith(\"refresh.\")\n\n\ndef test_authenticate_user_invalid_password() -> None:\n    \"\"\"Reject login attempts with a password that does not match the stored hash.\"\"\"\n\n    with pytest.raises(Exception):\n        authenticate_user({\"identifier\": \"alice@example.com\", \"password\": \"wrongpass\"})\n\n\ndef test_refresh_session_returns_access_token() -> None:\n    \"\"\"Turn a valid refresh token back into a fresh access token for the same subject.\"\"\"\n\n    user = get_user_by_email(\"alice@example.com\")\n    token = create_refresh_token(user)\n    result = refresh_session(token)\n    assert result[\"subject\"] == user.id\n    assert result[\"access_token\"].startswith(\"access.\")\n\n\ndef test_password_reset_flow_returns_reset_token() -> None:\n    \"\"\"Create a password reset handle and then update the password using that payload.\"\"\"\n\n    request = request_password_reset({\"email\": \"alice@example.com\", \"new_password\": \"newpassword123\"})\n    assert request[\"email\"] == \"alice@example.com\"\n    payload = validate_password_reset_payload({\"email\": \"alice@example.com\", \"new_password\": \"newpassword123\"})\n    assert payload[\"new_password\"] == \"newpassword123\"\n    result = reset_password({\"email\": \"alice@example.com\", \"new_password\": \"newpassword123\"})\n    assert result[\"status\"] == \"reset\"\n",
+    "tests/test_notifications.py": "\"\"\"Notification helpers for email and SMS delivery paths.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nfrom models import Invoice\nfrom notifications.email_service import build_email_message, send_password_reset_email, send_receipt_email\nfrom notifications.sms_service import format_sms_message, send_order_update_sms\n\n\ndef test_build_email_message() -> None:\n    \"\"\"Build an email payload for a normal notification request.\"\"\"\n\n    message = build_email_message(\"Hello\", \"Body text\", \"user@example.com\")\n    assert message[\"recipient\"] == \"user@example.com\"\n\n\ndef test_send_receipt_email() -> None:\n    \"\"\"Send a receipt email for an invoice and return the composed payload.\"\"\"\n\n    invoice = Invoice(invoice_id=\"inv_1\", order_id=\"ord_1\", user_email=\"alice@example.com\", amount_due=100, currency=\"USD\")\n    message = send_receipt_email(invoice, \"alice@example.com\")\n    assert message[\"subject\"].startswith(\"Receipt\")\n\n\ndef test_send_password_reset_email() -> None:\n    \"\"\"Deliver a password reset email containing the reset token.\"\"\"\n\n    message = send_password_reset_email(\"alice@example.com\", \"reset-token\")\n    assert \"reset-token\" in message[\"body\"]\n\n\ndef test_format_sms_message() -> None:\n    \"\"\"Trim SMS content so it stays within the delivery limit.\"\"\"\n\n    assert format_sms_message(\" hello world \") == \"hello world\"\n\n\ndef test_send_order_update_sms() -> None:\n    \"\"\"Send a short order update SMS and return the delivery envelope.\"\"\"\n\n    result = send_order_update_sms(\"5550100\", \"Order confirmed\")\n    assert result[\"status\"] == \"sent\"\n",
+    "tests/test_orders.py": "\"\"\"Order creation, checkout, and refund tests for the checkout flow.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport sys\n\nimport pytest\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nfrom models import User\nfrom orders.service import checkout_handler, create_order, refund_order\n\n\ndef test_create_order_success() -> None:\n    \"\"\"Create and persist an order for a logged-in buyer.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    order = create_order(user, [{\"name\": \"Widget\", \"amount\": 100}], 100)\n    assert order.status == \"pending\"\n    assert order.total_amount == 100\n\n\ndef test_create_order_invalid_amount() -> None:\n    \"\"\"Reject order creation when the amount is not positive.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    with pytest.raises(Exception):\n        create_order(user, [{\"name\": \"Widget\", \"amount\": 100}], 0)\n\n\ndef test_checkout_handler_success() -> None:\n    \"\"\"Run the full checkout chain from order creation through invoice generation.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    result = checkout_handler(user, [{\"name\": \"Widget\", \"amount\": 100}], 100)\n    assert result[\"order_id\"].startswith(\"ord_\")\n    assert result[\"invoice_id\"].startswith(\"inv_\")\n\n\ndef test_refund_order_success() -> None:\n    \"\"\"Refund a previously created order and return the refund payment result.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    order = create_order(user, [{\"name\": \"Widget\", \"amount\": 100}], 100)\n    result = refund_order(order.id, 100)\n    assert result.success is True\n\n\ndef test_checkout_handler_emits_transaction_id() -> None:\n    \"\"\"Verify that checkout returns the Stripe transaction id needed for support traces.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    result = checkout_handler(user, [{\"name\": \"Widget\", \"amount\": 250}], 250)\n    assert \"transaction_id\" in result\n",
+    "tests/test_payments.py": "\"\"\"Payment validation, charge, and refund tests that drive the Stripe adapter.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport sys\n\nimport pytest\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nfrom models import User\nfrom payments.retry import retry_payment_operation, should_retry\nfrom payments.stripe import charge_card, refund_charge\nfrom payments.validators import validate_amount, validate_currency, validate_invoice_items\n\n\ndef test_validate_amount_success() -> None:\n    \"\"\"Accept a positive integer amount before it reaches payment code.\"\"\"\n\n    assert validate_amount(1250) == 1250\n\n\ndef test_validate_amount_invalid() -> None:\n    \"\"\"Reject zero-value charges before Stripe is called.\"\"\"\n\n    with pytest.raises(Exception):\n        validate_amount(0)\n\n\ndef test_validate_currency_success() -> None:\n    \"\"\"Normalize a supported payment currency code.\"\"\"\n\n    assert validate_currency(\"usd\") == \"USD\"\n\n\ndef test_validate_invoice_items_success() -> None:\n    \"\"\"Accept invoice items that contain line amounts.\"\"\"\n\n    items = validate_invoice_items([{\"name\": \"Widget\", \"amount\": 100}])\n    assert items[0][\"amount\"] == 100\n\n\ndef test_charge_card_success() -> None:\n    \"\"\"Charge a customer card using the Stripe adapter and return a payment result.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    result = charge_card(user, 1500, \"USD\")\n    assert result.success is True\n    assert result.transaction_id.startswith(\"txn_\")\n\n\ndef test_charge_card_invalid_amount() -> None:\n    \"\"\"Reject invalid card charges when the amount is not positive.\"\"\"\n\n    user = User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"hash\")\n    with pytest.raises(Exception):\n        charge_card(user, 0, \"USD\")\n\n\ndef test_refund_charge_success() -> None:\n    \"\"\"Return a refund payment result for a previously created transaction id.\"\"\"\n\n    result = refund_charge(\"txn_abc\", 500)\n    assert result.success is True\n    assert result.transaction_id == \"refund_txn_abc\"\n\n\ndef test_should_retry_skips_validation_errors() -> None:\n    \"\"\"Detect that validation failures should not be retried as transient payment errors.\"\"\"\n\n    assert should_retry(Exception(\"timeout\")) is True\n\n\ndef test_retry_payment_operation_runs_function() -> None:\n    \"\"\"Invoke the retry wrapper around a successful in-memory operation.\"\"\"\n\n    result = retry_payment_operation(lambda value: value + 1, 4)\n    assert result == 5\n",
+    "tests/test_users.py": "\"\"\"User repository and registration tests for onboarding flows.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport sys\n\nimport pytest\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nfrom models import User\nfrom users.repository import get_user_by_email, get_user_by_id, save_user\nfrom users.service import lookup_user_for_auth, register_user_profile\n\n\ndef test_register_user_profile_success() -> None:\n    \"\"\"Register a new user profile and persist it in the in-memory repository.\"\"\"\n\n    user = register_user_profile({\"email\": \"carol@example.com\", \"username\": \"carol\", \"password\": \"password123\"})\n    assert user.email == \"carol@example.com\"\n    assert user.username == \"carol\"\n\n\ndef test_register_user_profile_invalid_password() -> None:\n    \"\"\"Reject user registration when the password is too short for auth reuse.\"\"\"\n\n    with pytest.raises(Exception):\n        register_user_profile({\"email\": \"dave@example.com\", \"username\": \"dave\", \"password\": \"short\"})\n\n\ndef test_lookup_user_for_auth_by_email() -> None:\n    \"\"\"Resolve a stored user from the auth-facing lookup helper.\"\"\"\n\n    user = lookup_user_for_auth(\"alice@example.com\")\n    assert user.id == \"u_1\"\n\n\ndef test_get_user_by_email_unknown() -> None:\n    \"\"\"Surface a validation error when a user email is not present in storage.\"\"\"\n\n    with pytest.raises(Exception):\n        get_user_by_email(\"missing@example.com\")\n\n\ndef test_save_user_persists_user() -> None:\n    \"\"\"Persist a new user instance and make it retrievable by id.\"\"\"\n\n    user = User(id=\"u_99\", email=\"zoe@example.com\", username=\"zoe\", password_hash=\"hash\")\n    saved = save_user(user)\n    assert get_user_by_id(saved.id).email == \"zoe@example.com\"\n",
+    "users/repository.py": "\"\"\"In-memory user repository helpers used by the fixture app.\"\"\"\n\nfrom __future__ import annotations\n\nfrom models import User\nfrom utils.decorators import cache_result, normalize_input\nfrom utils.errors import ValidationError\n\n\n_USERS: dict[str, User] = {\n    \"alice@example.com\": User(id=\"u_1\", email=\"alice@example.com\", username=\"alice\", password_hash=\"5e884898da280471\"),\n    \"bob@example.com\": User(id=\"u_2\", email=\"bob@example.com\", username=\"bobby\", password_hash=\"5e884898da280471\", roles=[\"customer\", \"admin\"]),\n}\n\n\n@cache_result\n@normalize_input\ndef get_user_by_email(email: str) -> User:\n    \"\"\"Return a user by email so auth and profile workflows can resolve identity.\"\"\"\n\n    if email not in _USERS:\n        raise ValidationError(\"unknown user email\")\n    return _USERS[email]\n\n\n@normalize_input\ndef save_user(user: User) -> User:\n    \"\"\"Persist a user in the in-memory store and return the stored record.\"\"\"\n\n    if not user.email:\n        raise ValidationError(\"user email is required\")\n    _USERS[user.email] = user\n    return user\n\n\ndef get_user_by_id(user_id: str) -> User:\n    \"\"\"Resolve a user by id for lookup flows and test fixtures.\"\"\"\n\n    for user in _USERS.values():\n        if user.id == user_id:\n            return user\n    raise ValidationError(\"unknown user id\")\n",
+    "users/service.py": "\"\"\"User-facing service helpers for registration and profile lookup.\"\"\"\n\nfrom __future__ import annotations\n\nimport hashlib\n\nfrom auth.validators import normalize_identifier\nfrom models import User\nfrom users.repository import get_user_by_email, save_user\nfrom utils.decorators import audit_action, log_execution\nfrom utils.errors import ValidationError, raise_validation_error\nfrom utils.logging import audit_event\n\n\ndef _password_hash(password: str) -> str:\n    \"\"\"Hash a plaintext password so registration and login can share the same check.\"\"\"\n\n    return hashlib.sha256(password.encode(\"utf-8\")).hexdigest()\n\n\n@log_execution\n@audit_action(\"users.register\")\ndef register_user_profile(payload: dict[str, object]) -> User:\n    \"\"\"Create a user profile, store it, and return the persisted record for auth flows.\"\"\"\n\n    email = normalize_identifier(str(payload.get(\"email\", \"\")))\n    username = normalize_identifier(str(payload.get(\"username\", \"\")))\n    password = str(payload.get(\"password\", \"\")).strip()\n    if not email:\n        raise_validation_error(\"email\", \"is required\")\n    if len(password) < 8:\n        raise_validation_error(\"password\", \"must contain at least 8 characters\")\n    user = User(id=f\"u_{len(email)}\", email=email, username=username, password_hash=_password_hash(password))\n    stored = save_user(user)\n    audit_event(\"register\", stored.id, \"profile created\")\n    return stored\n\n\n@log_execution\ndef lookup_user_for_auth(identifier: str) -> User:\n    \"\"\"Resolve a user for login, refresh, and password reset flows.\"\"\"\n\n    normalized = normalize_identifier(identifier)\n    if \"@\" in normalized:\n        return get_user_by_email(normalized)\n    raise ValidationError(\"login identifier must be an email address\")\n",
+    "utils/decorators.py": "\"\"\"Reusable decorators that shape auth, logging, validation, and retry behavior.\"\"\"\n\nfrom __future__ import annotations\n\nfrom functools import wraps\nfrom time import perf_counter\nfrom typing import Any, Callable, TypeVar\n\nfrom utils.errors import AuthenticationError, ValidationError, raise_validation_error\nfrom utils.logging import audit_event\n\n\nF = TypeVar(\"F\", bound=Callable[..., Any])\n\n\ndef log_execution(func: F) -> F:\n    \"\"\"Wrap a function so call sites can record execution timing and outcomes.\"\"\"\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        started_at = perf_counter()\n        result = func(*args, **kwargs)\n        _ = perf_counter() - started_at\n        return result\n\n    return wrapper  # type: ignore[return-value]\n\n\ndef audit_action(action: str) -> Callable[[F], F]:\n    \"\"\"Attach an audit event to a function so the caller intent is visible in traces.\"\"\"\n\n    def decorator(func: F) -> F:\n        @wraps(func)\n        def wrapper(*args: Any, **kwargs: Any):\n            actor = kwargs.get(\"actor\", \"system\")\n            audit_event(action, actor, func.__name__)\n            return func(*args, **kwargs)\n\n        return wrapper  # type: ignore[return-value]\n\n    return decorator\n\n\ndef require_auth(func: F) -> F:\n    \"\"\"Reject calls that do not provide a validated user context.\"\"\"\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        user = kwargs.get(\"user\")\n        if user is None:\n            raise AuthenticationError(\"user context is required\")\n        return func(*args, **kwargs)\n\n    return wrapper  # type: ignore[return-value]\n\n\ndef retry_on_failure(max_attempts: int = 3) -> Callable[[F], F]:\n    \"\"\"Retry transient operations a small number of times before surfacing the error.\"\"\"\n\n    def decorator(func: F) -> F:\n        @wraps(func)\n        def wrapper(*args: Any, **kwargs: Any):\n            last_error: Exception | None = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    return func(*args, **kwargs)\n                except ValidationError:\n                    raise\n                except Exception as error:\n                    last_error = error\n                    if attempt == max_attempts:\n                        raise\n            if last_error is not None:\n                raise last_error\n\n        return wrapper  # type: ignore[return-value]\n\n    return decorator\n\n\ndef validate_request(required_fields: tuple[str, ...]) -> Callable[[F], F]:\n    \"\"\"Validate that a mapping-style request body contains the fields a handler needs.\"\"\"\n\n    def decorator(func: F) -> F:\n        @wraps(func)\n        def wrapper(*args: Any, **kwargs: Any):\n            payload = kwargs.get(\"payload\") or (args[0] if args else {})\n            if not isinstance(payload, dict):\n                raise_validation_error(\"payload\", \"must be a mapping\")\n            for field in required_fields:\n                if field not in payload:\n                    raise_validation_error(field, \"is required\")\n            return func(*args, **kwargs)\n\n        return wrapper  # type: ignore[return-value]\n\n    return decorator\n\n\ndef ensure_not_none(field_name: str) -> Callable[[F], F]:\n    \"\"\"Guard a value so downstream business logic does not need to re-check None.\"\"\"\n\n    def decorator(func: F) -> F:\n        @wraps(func)\n        def wrapper(*args: Any, **kwargs: Any):\n            value = kwargs.get(field_name)\n            if value is None and args:\n                value = args[0]\n            if value is None:\n                raise_validation_error(field_name, \"cannot be None\")\n            return func(*args, **kwargs)\n\n        return wrapper  # type: ignore[return-value]\n\n    return decorator\n\n\ndef require_admin(func: F) -> F:\n    \"\"\"Allow only admin actors to execute an administrative service path.\"\"\"\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        user = kwargs.get(\"user\")\n        if user is None or \"admin\" not in getattr(user, \"roles\", []):\n            raise AuthenticationError(\"admin role required\")\n        return func(*args, **kwargs)\n\n    return wrapper  # type: ignore[return-value]\n\n\ndef normalize_input(func: F) -> F:\n    \"\"\"Normalize string arguments so validation and repository lookups stay consistent.\"\"\"\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        normalized_args = [value.strip() if isinstance(value, str) else value for value in args]\n        normalized_kwargs = {\n            key: value.strip() if isinstance(value, str) else value for key, value in kwargs.items()\n        }\n        return func(*normalized_args, **normalized_kwargs)\n\n    return wrapper  # type: ignore[return-value]\n\n\ndef measure_timing(func: F) -> F:\n    \"\"\"Measure execution time for expensive payment and notification workflows.\"\"\"\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        started_at = perf_counter()\n        result = func(*args, **kwargs)\n        _ = perf_counter() - started_at\n        return result\n\n    return wrapper  # type: ignore[return-value]\n\n\ndef cache_result(func: F) -> F:\n    \"\"\"Cache stable read operations so repeated graph traversals see the same output.\"\"\"\n\n    cache: dict[str, Any] = {}\n\n    @wraps(func)\n    def wrapper(*args: Any, **kwargs: Any):\n        key = repr((args, sorted(kwargs.items())))\n        if key not in cache:\n            cache[key] = func(*args, **kwargs)\n        return cache[key]\n\n    return wrapper  # type: ignore[return-value]\n",
+    "utils/errors.py": "\"\"\"Error types and formatting helpers for the sample app.\"\"\"\n\nfrom __future__ import annotations\n\n\nclass AppError(Exception):\n    \"\"\"Base application error used when a service wants a stable domain exception.\"\"\"\n\n\nclass ValidationError(AppError):\n    \"\"\"Raise when request data fails local validation before any repository call.\"\"\"\n\n\nclass AuthenticationError(AppError):\n    \"\"\"Raise when a caller cannot authenticate or a token cannot be trusted.\"\"\"\n\n\nclass PaymentError(AppError):\n    \"\"\"Raise when a charge, refund, or invoice operation cannot be completed.\"\"\"\n\n\ndef format_error(error: Exception) -> str:\n    \"\"\"Render a compact human-readable error message for logs and API responses.\"\"\"\n\n    return f\"{error.__class__.__name__}: {error}\"\n\n\ndef raise_validation_error(field: str, reason: str) -> None:\n    \"\"\"Raise a validation exception with field context for handlers and tests.\"\"\"\n\n    raise ValidationError(f\"{field}: {reason}\")\n",
+    "utils/logging.py": "\"\"\"Lightweight logging helpers used by the sample repository.\"\"\"\n\nfrom __future__ import annotations\n\nfrom datetime import datetime, timezone\n\n\ndef get_logger(component: str) -> dict[str, str]:\n    \"\"\"Build a minimal logger metadata payload for tests and instrumentation hooks.\"\"\"\n\n    return {\"component\": component, \"timestamp\": datetime.now(timezone.utc).isoformat()}\n\n\ndef audit_event(action: str, actor: str, detail: str) -> dict[str, str]:\n    \"\"\"Create an audit record that downstream decorators and services can reuse.\"\"\"\n\n    logger = get_logger(\"audit\")\n    return {\n        \"action\": action,\n        \"actor\": actor,\n        \"detail\": detail,\n        \"logged_at\": logger[\"timestamp\"],\n    }\n"
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "app.py::login_handler",
+        "label": "login_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 16,
+        "endLine": 19,
+        "docstring": "Handle the login request by validating input and delegating to auth.service.",
+        "callersCount": 0
+      },
+      {
+        "id": "app.py::register_handler",
+        "label": "register_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 25,
+        "endLine": 29,
+        "docstring": "Create a user account and return the stored identity for onboarding flows.",
+        "callersCount": 0
+      },
+      {
+        "id": "app.py::checkout_handler",
+        "label": "checkout_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 35,
+        "endLine": 39,
+        "docstring": "Perform checkout by resolving the user and forwarding the request to the order service.",
+        "callersCount": 0
+      },
+      {
+        "id": "app.py::refund_handler",
+        "label": "refund_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 45,
+        "endLine": 49,
+        "docstring": "Handle a refund request and return the result from the order service.",
+        "callersCount": 0
+      },
+      {
+        "id": "app.py::password_reset_handler",
+        "label": "password_reset_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 53,
+        "endLine": 58,
+        "docstring": "Trigger the password reset request and the follow-up password update flow.",
+        "callersCount": 0
+      },
+      {
+        "id": "app.py::token_refresh_handler",
+        "label": "token_refresh_handler",
+        "file": "app.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 62,
+        "endLine": 66,
+        "docstring": "Validate bearer auth and mint a fresh access token for the current user.",
+        "callersCount": 0
+      },
+      {
+        "id": "auth/middleware.py::extract_bearer_token",
+        "label": "extract_bearer_token",
+        "file": "auth/middleware.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 11,
+        "endLine": 17,
+        "docstring": "Extract the bearer token from an HTTP authorization header.",
+        "callersCount": 1
+      },
+      {
+        "id": "auth/middleware.py::require_authentication",
+        "label": "require_authentication",
+        "file": "auth/middleware.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 21,
+        "endLine": 28,
+        "docstring": "Validate a bearer token and return its payload for downstream request handling.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/middleware.py::authorize_request",
+        "label": "authorize_request",
+        "file": "auth/middleware.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 31,
+        "endLine": 35,
+        "docstring": "Return an authorization summary that handlers can use for routing and audit logs.",
+        "callersCount": 1
+      },
+      {
+        "id": "auth/service.py::_password_hash",
+        "label": "_password_hash",
+        "file": "auth/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 16,
+        "endLine": 19,
+        "docstring": "Hash a plaintext password for the fixture repository's deterministic comparisons.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/service.py::authenticate_user",
+        "label": "authenticate_user",
+        "file": "auth/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 25,
+        "endLine": 35,
+        "docstring": "Validate login payload, resolve a user, verify the password, and issue tokens.",
+        "callersCount": 3
+      },
+      {
+        "id": "auth/service.py::refresh_session",
+        "label": "refresh_session",
+        "file": "auth/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 40,
+        "endLine": 50,
+        "docstring": "Decode a refresh token, check expiry, and mint a new access token for the subject.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/service.py::request_password_reset",
+        "label": "request_password_reset",
+        "file": "auth/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 54,
+        "endLine": 60,
+        "docstring": "Validate a password reset request and return a refresh token-style reset handle.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/service.py::reset_password",
+        "label": "reset_password",
+        "file": "auth/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 64,
+        "endLine": 73,
+        "docstring": "Replace a user's password after validating the reset request and new secret length.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/tokens.py::_sign_token",
+        "label": "_sign_token",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 13,
+        "endLine": 17,
+        "docstring": "Create the deterministic signature used by access and refresh token strings.",
+        "callersCount": 3
+      },
+      {
+        "id": "auth/tokens.py::create_access_token",
+        "label": "create_access_token",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 20,
+        "endLine": 27,
+        "docstring": "Create a signed access token for a user session and downstream middleware checks.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/tokens.py::create_refresh_token",
+        "label": "create_refresh_token",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 30,
+        "endLine": 37,
+        "docstring": "Create a longer-lived refresh token for session renewal and password reset flows.",
+        "callersCount": 3
+      },
+      {
+        "id": "auth/tokens.py::decode_token",
+        "label": "decode_token",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 40,
+        "endLine": 55,
+        "docstring": "Parse a token string into claims that services can inspect for identity and expiry.",
+        "callersCount": 3
+      },
+      {
+        "id": "auth/tokens.py::is_token_expired",
+        "label": "is_token_expired",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 58,
+        "endLine": 61,
+        "docstring": "Check whether the token has passed its expiry boundary.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/tokens.py::get_token_subject",
+        "label": "get_token_subject",
+        "file": "auth/tokens.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 64,
+        "endLine": 67,
+        "docstring": "Extract the subject from a valid token string for quick lookups and trace output.",
+        "callersCount": 1
+      },
+      {
+        "id": "auth/validators.py::normalize_identifier",
+        "label": "normalize_identifier",
+        "file": "auth/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 8,
+        "endLine": 11,
+        "docstring": "Normalize usernames and email addresses for login and registration lookups.",
+        "callersCount": 4
+      },
+      {
+        "id": "auth/validators.py::validate_login_payload",
+        "label": "validate_login_payload",
+        "file": "auth/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 14,
+        "endLine": 23,
+        "docstring": "Validate the login payload before the service resolves a user and checks a password.",
+        "callersCount": 2
+      },
+      {
+        "id": "auth/validators.py::validate_password_reset_payload",
+        "label": "validate_password_reset_payload",
+        "file": "auth/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 26,
+        "endLine": 35,
+        "docstring": "Validate the password reset payload before a token is exchanged for a new secret.",
+        "callersCount": 3
+      },
+      {
+        "id": "config.py::AppSettings",
+        "label": "AppSettings",
+        "file": "config.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 9,
+        "endLine": 16,
+        "docstring": "Container for the core service settings used across auth, payments, and notifications.",
+        "callersCount": 1
+      },
+      {
+        "id": "config.py::load_settings",
+        "label": "load_settings",
+        "file": "config.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 19,
+        "endLine": 28,
+        "docstring": "Load the application defaults that drive token lifetime, retry policy, and support routing.",
+        "callersCount": 2
+      },
+      {
+        "id": "config.py::get_service_config",
+        "label": "get_service_config",
+        "file": "config.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 31,
+        "endLine": 43,
+        "docstring": "Expose a serializable settings view for modules that need endpoints and thresholds.",
+        "callersCount": 1
+      },
+      {
+        "id": "models.py::User",
+        "label": "User",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 10,
+        "endLine": 23,
+        "docstring": "Represent an application user with authentication and billing identity.",
+        "callersCount": 11
+      },
+      {
+        "id": "models.py::Order",
+        "label": "Order",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 27,
+        "endLine": 40,
+        "docstring": "Represent a checkout request, its line items, and the current order status.",
+        "callersCount": 1
+      },
+      {
+        "id": "models.py::Invoice",
+        "label": "Invoice",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 44,
+        "endLine": 57,
+        "docstring": "Represent a generated billing document for a completed order.",
+        "callersCount": 2
+      },
+      {
+        "id": "models.py::PaymentResult",
+        "label": "PaymentResult",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 61,
+        "endLine": 72,
+        "docstring": "Represent the outcome of a payment or refund request.",
+        "callersCount": 3
+      },
+      {
+        "id": "models.py::TokenPayload",
+        "label": "TokenPayload",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 76,
+        "endLine": 83,
+        "docstring": "Represent the encoded claims stored inside access and refresh tokens.",
+        "callersCount": 1
+      },
+      {
+        "id": "models.py::NotificationResult",
+        "label": "NotificationResult",
+        "file": "models.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 87,
+        "endLine": 93,
+        "docstring": "Represent the delivery state for email and SMS notifications.",
+        "callersCount": 0
+      },
+      {
+        "id": "models.py::display_name",
+        "label": "display_name",
+        "file": "models.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 20,
+        "endLine": 23,
+        "docstring": "Return the most readable label for login screens, notifications, and audits.",
+        "callersCount": 0
+      },
+      {
+        "id": "models.py::line_count",
+        "label": "line_count",
+        "file": "models.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 37,
+        "endLine": 40,
+        "docstring": "Count the number of item lines that should be included in invoices and emails.",
+        "callersCount": 0
+      },
+      {
+        "id": "models.py::amount_with_tax",
+        "label": "amount_with_tax",
+        "file": "models.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 54,
+        "endLine": 57,
+        "docstring": "Return the rounded total used by invoice rendering and receipt emails.",
+        "callersCount": 0
+      },
+      {
+        "id": "models.py::is_successful",
+        "label": "is_successful",
+        "file": "models.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 69,
+        "endLine": 72,
+        "docstring": "Return whether the payment flow finished in a reusable success state.",
+        "callersCount": 0
+      },
+      {
+        "id": "notifications/email_service.py::build_email_message",
+        "label": "build_email_message",
+        "file": "notifications/email_service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 9,
+        "endLine": 12,
+        "docstring": "Build an email payload used by receipt, alert, and reset notifications.",
+        "callersCount": 3
+      },
+      {
+        "id": "notifications/email_service.py::send_receipt_email",
+        "label": "send_receipt_email",
+        "file": "notifications/email_service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 16,
+        "endLine": 24,
+        "docstring": "Send the receipt email for a completed order and return the message payload.",
+        "callersCount": 3
+      },
+      {
+        "id": "notifications/email_service.py::send_password_reset_email",
+        "label": "send_password_reset_email",
+        "file": "notifications/email_service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 28,
+        "endLine": 31,
+        "docstring": "Send a password reset email that contains a reset token for auth workflows.",
+        "callersCount": 1
+      },
+      {
+        "id": "notifications/sms_service.py::format_sms_message",
+        "label": "format_sms_message",
+        "file": "notifications/sms_service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 8,
+        "endLine": 11,
+        "docstring": "Format an SMS body so order updates and payment alerts remain concise.",
+        "callersCount": 2
+      },
+      {
+        "id": "notifications/sms_service.py::send_order_update_sms",
+        "label": "send_order_update_sms",
+        "file": "notifications/sms_service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 16,
+        "endLine": 19,
+        "docstring": "Send a short order-status SMS and return the delivery envelope.",
+        "callersCount": 2
+      },
+      {
+        "id": "orders/repository.py::get_order_by_id",
+        "label": "get_order_by_id",
+        "file": "orders/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 14,
+        "endLine": 19,
+        "docstring": "Return a stored order by identifier for checkout and refund flows.",
+        "callersCount": 1
+      },
+      {
+        "id": "orders/repository.py::create_order_record",
+        "label": "create_order_record",
+        "file": "orders/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 23,
+        "endLine": 27,
+        "docstring": "Persist a new order record and return the stored order state.",
+        "callersCount": 1
+      },
+      {
+        "id": "orders/repository.py::update_order_status",
+        "label": "update_order_status",
+        "file": "orders/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 30,
+        "endLine": 35,
+        "docstring": "Update a stored order status after payment, refund, or cancellation changes.",
+        "callersCount": 2
+      },
+      {
+        "id": "orders/service.py::_build_order",
+        "label": "_build_order",
+        "file": "orders/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 17,
+        "endLine": 20,
+        "docstring": "Build an order object before persisting it and sending it to payment.",
+        "callersCount": 1
+      },
+      {
+        "id": "orders/service.py::create_order",
+        "label": "create_order",
+        "file": "orders/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 26,
+        "endLine": 35,
+        "docstring": "Validate a new order request, persist it, and return the created order.",
+        "callersCount": 4
+      },
+      {
+        "id": "orders/service.py::checkout_handler",
+        "label": "checkout_handler",
+        "file": "orders/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 40,
+        "endLine": 51,
+        "docstring": "Create an order, charge the card, generate an invoice, and notify the buyer.",
+        "callersCount": 0
+      },
+      {
+        "id": "orders/service.py::refund_order",
+        "label": "refund_order",
+        "file": "orders/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 55,
+        "endLine": 64,
+        "docstring": "Refund a stored order, update the status, and return the refund result.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/invoices.py::calculate_invoice_total",
+        "label": "calculate_invoice_total",
+        "file": "payments/invoices.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 11,
+        "endLine": 17,
+        "docstring": "Compute the invoice amount from line items for orders and refunds.",
+        "callersCount": 1
+      },
+      {
+        "id": "payments/invoices.py::generate_invoice",
+        "label": "generate_invoice",
+        "file": "payments/invoices.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 22,
+        "endLine": 36,
+        "docstring": "Create an invoice for a paid order and hand it to the receipt notification flow.",
+        "callersCount": 1
+      },
+      {
+        "id": "payments/invoices.py::send_invoice_receipt",
+        "label": "send_invoice_receipt",
+        "file": "payments/invoices.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 39,
+        "endLine": 42,
+        "docstring": "Return a simple delivery acknowledgment for invoice emails.",
+        "callersCount": 0
+      },
+      {
+        "id": "payments/retry.py::should_retry",
+        "label": "should_retry",
+        "file": "payments/retry.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 15,
+        "endLine": 18,
+        "docstring": "Return whether a payment error looks transient and should be attempted again.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/retry.py::retry_payment_operation",
+        "label": "retry_payment_operation",
+        "file": "payments/retry.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 22,
+        "endLine": 31,
+        "docstring": "Execute a payment operation with retry semantics and light backoff.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/stripe.py::create_stripe_customer",
+        "label": "create_stripe_customer",
+        "file": "payments/stripe.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 13,
+        "endLine": 16,
+        "docstring": "Create a stable customer reference for a stored user account.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/stripe.py::charge_card",
+        "label": "charge_card",
+        "file": "payments/stripe.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 22,
+        "endLine": 36,
+        "docstring": "Validate a charge request, execute the payment, and return the transaction outcome.",
+        "callersCount": 3
+      },
+      {
+        "id": "payments/stripe.py::refund_charge",
+        "label": "refund_charge",
+        "file": "payments/stripe.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 41,
+        "endLine": 49,
+        "docstring": "Validate a refund request and return the refund result for the original charge.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/stripe.py::_charge",
+        "label": "_charge",
+        "file": "payments/stripe.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 28,
+        "endLine": 34,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "payments/validators.py::validate_amount",
+        "label": "validate_amount",
+        "file": "payments/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 8,
+        "endLine": 14,
+        "docstring": "Validate a charge or refund amount before it reaches Stripe or invoice math.",
+        "callersCount": 5
+      },
+      {
+        "id": "payments/validators.py::validate_invoice_items",
+        "label": "validate_invoice_items",
+        "file": "payments/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 17,
+        "endLine": 27,
+        "docstring": "Validate line items that will be included in invoice totals and receipts.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/validators.py::validate_currency",
+        "label": "validate_currency",
+        "file": "payments/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 30,
+        "endLine": 36,
+        "docstring": "Validate the invoice currency so downstream providers use a supported code.",
+        "callersCount": 2
+      },
+      {
+        "id": "payments/validators.py::normalize_payment_amount",
+        "label": "normalize_payment_amount",
+        "file": "payments/validators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 39,
+        "endLine": 42,
+        "docstring": "Normalize amounts that arrive as strings or decimal-like integers.",
+        "callersCount": 2
+      },
+      {
+        "id": "tests/test_auth.py::test_validate_login_payload_normalizes_identifier",
+        "label": "test_validate_login_payload_normalizes_identifier",
+        "file": "tests/test_auth.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 18,
+        "endLine": 22,
+        "docstring": "Validate that login identifiers are normalized before auth lookup.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_auth.py::test_authenticate_user_success",
+        "label": "test_authenticate_user_success",
+        "file": "tests/test_auth.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 25,
+        "endLine": 31,
+        "docstring": "Authenticate an existing fixture user and return access and refresh tokens.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_auth.py::test_authenticate_user_invalid_password",
+        "label": "test_authenticate_user_invalid_password",
+        "file": "tests/test_auth.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 34,
+        "endLine": 38,
+        "docstring": "Reject login attempts with a password that does not match the stored hash.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_auth.py::test_refresh_session_returns_access_token",
+        "label": "test_refresh_session_returns_access_token",
+        "file": "tests/test_auth.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 41,
+        "endLine": 48,
+        "docstring": "Turn a valid refresh token back into a fresh access token for the same subject.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_auth.py::test_password_reset_flow_returns_reset_token",
+        "label": "test_password_reset_flow_returns_reset_token",
+        "file": "tests/test_auth.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 51,
+        "endLine": 59,
+        "docstring": "Create a password reset handle and then update the password using that payload.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_notifications.py::test_build_email_message",
+        "label": "test_build_email_message",
+        "file": "tests/test_notifications.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 15,
+        "endLine": 19,
+        "docstring": "Build an email payload for a normal notification request.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_notifications.py::test_send_receipt_email",
+        "label": "test_send_receipt_email",
+        "file": "tests/test_notifications.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 22,
+        "endLine": 27,
+        "docstring": "Send a receipt email for an invoice and return the composed payload.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_notifications.py::test_send_password_reset_email",
+        "label": "test_send_password_reset_email",
+        "file": "tests/test_notifications.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 30,
+        "endLine": 34,
+        "docstring": "Deliver a password reset email containing the reset token.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_notifications.py::test_format_sms_message",
+        "label": "test_format_sms_message",
+        "file": "tests/test_notifications.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 37,
+        "endLine": 40,
+        "docstring": "Trim SMS content so it stays within the delivery limit.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_notifications.py::test_send_order_update_sms",
+        "label": "test_send_order_update_sms",
+        "file": "tests/test_notifications.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 43,
+        "endLine": 47,
+        "docstring": "Send a short order update SMS and return the delivery envelope.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_orders.py::test_create_order_success",
+        "label": "test_create_order_success",
+        "file": "tests/test_orders.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 16,
+        "endLine": 22,
+        "docstring": "Create and persist an order for a logged-in buyer.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_orders.py::test_create_order_invalid_amount",
+        "label": "test_create_order_invalid_amount",
+        "file": "tests/test_orders.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 25,
+        "endLine": 30,
+        "docstring": "Reject order creation when the amount is not positive.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_orders.py::test_checkout_handler_success",
+        "label": "test_checkout_handler_success",
+        "file": "tests/test_orders.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 33,
+        "endLine": 39,
+        "docstring": "Run the full checkout chain from order creation through invoice generation.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_orders.py::test_refund_order_success",
+        "label": "test_refund_order_success",
+        "file": "tests/test_orders.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 42,
+        "endLine": 48,
+        "docstring": "Refund a previously created order and return the refund payment result.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_orders.py::test_checkout_handler_emits_transaction_id",
+        "label": "test_checkout_handler_emits_transaction_id",
+        "file": "tests/test_orders.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 51,
+        "endLine": 56,
+        "docstring": "Verify that checkout returns the Stripe transaction id needed for support traces.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_validate_amount_success",
+        "label": "test_validate_amount_success",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 18,
+        "endLine": 21,
+        "docstring": "Accept a positive integer amount before it reaches payment code.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_validate_amount_invalid",
+        "label": "test_validate_amount_invalid",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 24,
+        "endLine": 28,
+        "docstring": "Reject zero-value charges before Stripe is called.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_validate_currency_success",
+        "label": "test_validate_currency_success",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 31,
+        "endLine": 34,
+        "docstring": "Normalize a supported payment currency code.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_validate_invoice_items_success",
+        "label": "test_validate_invoice_items_success",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 37,
+        "endLine": 41,
+        "docstring": "Accept invoice items that contain line amounts.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_charge_card_success",
+        "label": "test_charge_card_success",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 44,
+        "endLine": 50,
+        "docstring": "Charge a customer card using the Stripe adapter and return a payment result.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_charge_card_invalid_amount",
+        "label": "test_charge_card_invalid_amount",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 53,
+        "endLine": 58,
+        "docstring": "Reject invalid card charges when the amount is not positive.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_refund_charge_success",
+        "label": "test_refund_charge_success",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 61,
+        "endLine": 66,
+        "docstring": "Return a refund payment result for a previously created transaction id.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_should_retry_skips_validation_errors",
+        "label": "test_should_retry_skips_validation_errors",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 69,
+        "endLine": 72,
+        "docstring": "Detect that validation failures should not be retried as transient payment errors.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_payments.py::test_retry_payment_operation_runs_function",
+        "label": "test_retry_payment_operation_runs_function",
+        "file": "tests/test_payments.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 75,
+        "endLine": 79,
+        "docstring": "Invoke the retry wrapper around a successful in-memory operation.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_users.py::test_register_user_profile_success",
+        "label": "test_register_user_profile_success",
+        "file": "tests/test_users.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 17,
+        "endLine": 22,
+        "docstring": "Register a new user profile and persist it in the in-memory repository.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_users.py::test_register_user_profile_invalid_password",
+        "label": "test_register_user_profile_invalid_password",
+        "file": "tests/test_users.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 25,
+        "endLine": 29,
+        "docstring": "Reject user registration when the password is too short for auth reuse.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_users.py::test_lookup_user_for_auth_by_email",
+        "label": "test_lookup_user_for_auth_by_email",
+        "file": "tests/test_users.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 32,
+        "endLine": 36,
+        "docstring": "Resolve a stored user from the auth-facing lookup helper.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_users.py::test_get_user_by_email_unknown",
+        "label": "test_get_user_by_email_unknown",
+        "file": "tests/test_users.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 39,
+        "endLine": 43,
+        "docstring": "Surface a validation error when a user email is not present in storage.",
+        "callersCount": 0
+      },
+      {
+        "id": "tests/test_users.py::test_save_user_persists_user",
+        "label": "test_save_user_persists_user",
+        "file": "tests/test_users.py",
+        "type": "function",
+        "isTest": true,
+        "external": false,
+        "line": 46,
+        "endLine": 51,
+        "docstring": "Persist a new user instance and make it retrievable by id.",
+        "callersCount": 0
+      },
+      {
+        "id": "users/repository.py::get_user_by_email",
+        "label": "get_user_by_email",
+        "file": "users/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 18,
+        "endLine": 23,
+        "docstring": "Return a user by email so auth and profile workflows can resolve identity.",
+        "callersCount": 3
+      },
+      {
+        "id": "users/repository.py::save_user",
+        "label": "save_user",
+        "file": "users/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 27,
+        "endLine": 33,
+        "docstring": "Persist a user in the in-memory store and return the stored record.",
+        "callersCount": 2
+      },
+      {
+        "id": "users/repository.py::get_user_by_id",
+        "label": "get_user_by_id",
+        "file": "users/repository.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 36,
+        "endLine": 42,
+        "docstring": "Resolve a user by id for lookup flows and test fixtures.",
+        "callersCount": 1
+      },
+      {
+        "id": "users/service.py::_password_hash",
+        "label": "_password_hash",
+        "file": "users/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 15,
+        "endLine": 18,
+        "docstring": "Hash a plaintext password so registration and login can share the same check.",
+        "callersCount": 1
+      },
+      {
+        "id": "users/service.py::register_user_profile",
+        "label": "register_user_profile",
+        "file": "users/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 23,
+        "endLine": 36,
+        "docstring": "Create a user profile, store it, and return the persisted record for auth flows.",
+        "callersCount": 3
+      },
+      {
+        "id": "users/service.py::lookup_user_for_auth",
+        "label": "lookup_user_for_auth",
+        "file": "users/service.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 40,
+        "endLine": 46,
+        "docstring": "Resolve a user for login, refresh, and password reset flows.",
+        "callersCount": 4
+      },
+      {
+        "id": "utils/decorators.py::log_execution",
+        "label": "log_execution",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 16,
+        "endLine": 26,
+        "docstring": "Wrap a function so call sites can record execution timing and outcomes.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::audit_action",
+        "label": "audit_action",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 29,
+        "endLine": 41,
+        "docstring": "Attach an audit event to a function so the caller intent is visible in traces.",
+        "callersCount": 14
+      },
+      {
+        "id": "utils/decorators.py::require_auth",
+        "label": "require_auth",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 44,
+        "endLine": 54,
+        "docstring": "Reject calls that do not provide a validated user context.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::retry_on_failure",
+        "label": "retry_on_failure",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 57,
+        "endLine": 78,
+        "docstring": "Retry transient operations a small number of times before surfacing the error.",
+        "callersCount": 2
+      },
+      {
+        "id": "utils/decorators.py::validate_request",
+        "label": "validate_request",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 81,
+        "endLine": 97,
+        "docstring": "Validate that a mapping-style request body contains the fields a handler needs.",
+        "callersCount": 4
+      },
+      {
+        "id": "utils/decorators.py::ensure_not_none",
+        "label": "ensure_not_none",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 100,
+        "endLine": 115,
+        "docstring": "Guard a value so downstream business logic does not need to re-check None.",
+        "callersCount": 1
+      },
+      {
+        "id": "utils/decorators.py::require_admin",
+        "label": "require_admin",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 118,
+        "endLine": 128,
+        "docstring": "Allow only admin actors to execute an administrative service path.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::normalize_input",
+        "label": "normalize_input",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 131,
+        "endLine": 142,
+        "docstring": "Normalize string arguments so validation and repository lookups stay consistent.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::measure_timing",
+        "label": "measure_timing",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 145,
+        "endLine": 155,
+        "docstring": "Measure execution time for expensive payment and notification workflows.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::cache_result",
+        "label": "cache_result",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 158,
+        "endLine": 170,
+        "docstring": "Cache stable read operations so repeated graph traversals see the same output.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 20,
+        "endLine": 24,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::decorator",
+        "label": "decorator",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 32,
+        "endLine": 39,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 48,
+        "endLine": 52,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::decorator",
+        "label": "decorator",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 60,
+        "endLine": 76,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::decorator",
+        "label": "decorator",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 84,
+        "endLine": 95,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::decorator",
+        "label": "decorator",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 103,
+        "endLine": 113,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 122,
+        "endLine": 126,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 135,
+        "endLine": 140,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 149,
+        "endLine": 153,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 164,
+        "endLine": 168,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 34,
+        "endLine": 37,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 62,
+        "endLine": 74,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 86,
+        "endLine": 93,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/decorators.py::wrapper",
+        "label": "wrapper",
+        "file": "utils/decorators.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 105,
+        "endLine": 111,
+        "docstring": null,
+        "callersCount": 0
+      },
+      {
+        "id": "utils/errors.py::AppError",
+        "label": "AppError",
+        "file": "utils/errors.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 6,
+        "endLine": 7,
+        "docstring": "Base application error used when a service wants a stable domain exception.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/errors.py::ValidationError",
+        "label": "ValidationError",
+        "file": "utils/errors.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 10,
+        "endLine": 11,
+        "docstring": "Raise when request data fails local validation before any repository call.",
+        "callersCount": 10
+      },
+      {
+        "id": "utils/errors.py::AuthenticationError",
+        "label": "AuthenticationError",
+        "file": "utils/errors.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 14,
+        "endLine": 15,
+        "docstring": "Raise when a caller cannot authenticate or a token cannot be trusted.",
+        "callersCount": 8
+      },
+      {
+        "id": "utils/errors.py::PaymentError",
+        "label": "PaymentError",
+        "file": "utils/errors.py",
+        "type": "class",
+        "isTest": false,
+        "external": false,
+        "line": 18,
+        "endLine": 19,
+        "docstring": "Raise when a charge, refund, or invoice operation cannot be completed.",
+        "callersCount": 6
+      },
+      {
+        "id": "utils/errors.py::format_error",
+        "label": "format_error",
+        "file": "utils/errors.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 22,
+        "endLine": 25,
+        "docstring": "Render a compact human-readable error message for logs and API responses.",
+        "callersCount": 0
+      },
+      {
+        "id": "utils/errors.py::raise_validation_error",
+        "label": "raise_validation_error",
+        "file": "utils/errors.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 28,
+        "endLine": 31,
+        "docstring": "Raise a validation exception with field context for handlers and tests.",
+        "callersCount": 10
+      },
+      {
+        "id": "utils/logging.py::get_logger",
+        "label": "get_logger",
+        "file": "utils/logging.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 8,
+        "endLine": 11,
+        "docstring": "Build a minimal logger metadata payload for tests and instrumentation hooks.",
+        "callersCount": 1
+      },
+      {
+        "id": "utils/logging.py::audit_event",
+        "label": "audit_event",
+        "file": "utils/logging.py",
+        "type": "function",
+        "isTest": false,
+        "external": false,
+        "line": 14,
+        "endLine": 23,
+        "docstring": "Create an audit record that downstream decorators and services can reuse.",
+        "callersCount": 9
+      }
+    ],
+    "edges": [
+      {
+        "source": "app.py::login_handler",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::login_handler",
+        "target": "utils/decorators.py::validate_request",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::login_handler",
+        "target": "auth/service.py::authenticate_user",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::register_handler",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::register_handler",
+        "target": "utils/decorators.py::validate_request",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::register_handler",
+        "target": "users/service.py::register_user_profile",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::checkout_handler",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::checkout_handler",
+        "target": "utils/decorators.py::validate_request",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::checkout_handler",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::refund_handler",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::refund_handler",
+        "target": "utils/decorators.py::validate_request",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::refund_handler",
+        "target": "orders/service.py::refund_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::password_reset_handler",
+        "target": "auth/service.py::request_password_reset",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::password_reset_handler",
+        "target": "auth/service.py::reset_password",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::token_refresh_handler",
+        "target": "auth/middleware.py::authorize_request",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::token_refresh_handler",
+        "target": "auth/service.py::refresh_session",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "app.py::token_refresh_handler",
+        "target": "auth/middleware.py::require_authentication",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::extract_bearer_token",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::require_authentication",
+        "target": "auth/middleware.py::extract_bearer_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::require_authentication",
+        "target": "auth/tokens.py::decode_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::require_authentication",
+        "target": "auth/tokens.py::is_token_expired",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::require_authentication",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::authorize_request",
+        "target": "auth/middleware.py::require_authentication",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/middleware.py::authorize_request",
+        "target": "auth/tokens.py::get_token_subject",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "utils/decorators.py::retry_on_failure",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "auth/validators.py::validate_login_payload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "users/service.py::lookup_user_for_auth",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "auth/tokens.py::create_access_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "auth/tokens.py::create_refresh_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "auth/service.py::_password_hash",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::authenticate_user",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "auth/tokens.py::decode_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "auth/tokens.py::is_token_expired",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "auth/tokens.py::create_access_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::refresh_session",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::request_password_reset",
+        "target": "auth/validators.py::validate_password_reset_payload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::request_password_reset",
+        "target": "users/service.py::lookup_user_for_auth",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::request_password_reset",
+        "target": "auth/tokens.py::create_refresh_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::reset_password",
+        "target": "auth/validators.py::validate_password_reset_payload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::reset_password",
+        "target": "users/service.py::lookup_user_for_auth",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::reset_password",
+        "target": "auth/service.py::_password_hash",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::reset_password",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/service.py::reset_password",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::create_access_token",
+        "target": "config.py::load_settings",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::create_access_token",
+        "target": "auth/tokens.py::_sign_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::create_refresh_token",
+        "target": "config.py::get_service_config",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::create_refresh_token",
+        "target": "auth/tokens.py::_sign_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::decode_token",
+        "target": "auth/tokens.py::_sign_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::decode_token",
+        "target": "models.py::TokenPayload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::decode_token",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/tokens.py::get_token_subject",
+        "target": "auth/tokens.py::decode_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/validators.py::validate_login_payload",
+        "target": "auth/validators.py::normalize_identifier",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/validators.py::validate_login_payload",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/validators.py::validate_password_reset_payload",
+        "target": "auth/validators.py::normalize_identifier",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/validators.py::validate_password_reset_payload",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "auth/validators.py::validate_password_reset_payload",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "config.py::load_settings",
+        "target": "config.py::AppSettings",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "config.py::get_service_config",
+        "target": "config.py::load_settings",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "notifications/email_service.py::send_receipt_email",
+        "target": "notifications/email_service.py::build_email_message",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "notifications/email_service.py::send_password_reset_email",
+        "target": "notifications/email_service.py::build_email_message",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "notifications/sms_service.py::send_order_update_sms",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "notifications/sms_service.py::send_order_update_sms",
+        "target": "notifications/sms_service.py::format_sms_message",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/repository.py::get_order_by_id",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/repository.py::create_order_record",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/repository.py::update_order_status",
+        "target": "orders/repository.py::get_order_by_id",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::_build_order",
+        "target": "models.py::Order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "payments/validators.py::validate_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "payments/validators.py::validate_invoice_items",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "orders/service.py::_build_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "orders/repository.py::create_order_record",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::create_order",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "orders/service.py::create_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "payments/stripe.py::charge_card",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "payments/invoices.py::generate_invoice",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "notifications/email_service.py::send_receipt_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "notifications/sms_service.py::send_order_update_sms",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "orders/repository.py::update_order_status",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::checkout_handler",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::refund_order",
+        "target": "payments/validators.py::validate_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::refund_order",
+        "target": "orders/repository.py::update_order_status",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::refund_order",
+        "target": "payments/stripe.py::refund_charge",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "orders/service.py::refund_order",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/invoices.py::generate_invoice",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/invoices.py::generate_invoice",
+        "target": "payments/invoices.py::calculate_invoice_total",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/invoices.py::generate_invoice",
+        "target": "models.py::Invoice",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/invoices.py::generate_invoice",
+        "target": "notifications/email_service.py::send_receipt_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/invoices.py::generate_invoice",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/retry.py::retry_payment_operation",
+        "target": "utils/decorators.py::retry_on_failure",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/retry.py::retry_payment_operation",
+        "target": "payments/retry.py::should_retry",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/retry.py::retry_payment_operation",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "utils/decorators.py::ensure_not_none",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "payments/validators.py::normalize_payment_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "payments/validators.py::validate_currency",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "payments/retry.py::retry_payment_operation",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "payments/stripe.py::create_stripe_customer",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "models.py::PaymentResult",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::charge_card",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::refund_charge",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::refund_charge",
+        "target": "payments/validators.py::normalize_payment_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::refund_charge",
+        "target": "models.py::PaymentResult",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::refund_charge",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::_charge",
+        "target": "payments/stripe.py::create_stripe_customer",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::_charge",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::_charge",
+        "target": "models.py::PaymentResult",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/stripe.py::_charge",
+        "target": "utils/errors.py::PaymentError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/validators.py::validate_amount",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/validators.py::validate_invoice_items",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/validators.py::validate_invoice_items",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/validators.py::validate_currency",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "payments/validators.py::normalize_payment_amount",
+        "target": "payments/validators.py::validate_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_validate_login_payload_normalizes_identifier",
+        "target": "auth/validators.py::validate_login_payload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_authenticate_user_success",
+        "target": "auth/service.py::authenticate_user",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_authenticate_user_invalid_password",
+        "target": "auth/service.py::authenticate_user",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_refresh_session_returns_access_token",
+        "target": "users/repository.py::get_user_by_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_refresh_session_returns_access_token",
+        "target": "auth/tokens.py::create_refresh_token",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_refresh_session_returns_access_token",
+        "target": "auth/service.py::refresh_session",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_password_reset_flow_returns_reset_token",
+        "target": "auth/service.py::request_password_reset",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_password_reset_flow_returns_reset_token",
+        "target": "auth/validators.py::validate_password_reset_payload",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_auth.py::test_password_reset_flow_returns_reset_token",
+        "target": "auth/service.py::reset_password",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_build_email_message",
+        "target": "notifications/email_service.py::build_email_message",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_send_receipt_email",
+        "target": "models.py::Invoice",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_send_receipt_email",
+        "target": "notifications/email_service.py::send_receipt_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_send_password_reset_email",
+        "target": "notifications/email_service.py::send_password_reset_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_format_sms_message",
+        "target": "notifications/sms_service.py::format_sms_message",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_notifications.py::test_send_order_update_sms",
+        "target": "notifications/sms_service.py::send_order_update_sms",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_create_order_success",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_create_order_success",
+        "target": "orders/service.py::create_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_create_order_invalid_amount",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_create_order_invalid_amount",
+        "target": "orders/service.py::create_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_checkout_handler_success",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_refund_order_success",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_refund_order_success",
+        "target": "orders/service.py::create_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_refund_order_success",
+        "target": "orders/service.py::refund_order",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_orders.py::test_checkout_handler_emits_transaction_id",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_validate_amount_success",
+        "target": "payments/validators.py::validate_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_validate_amount_invalid",
+        "target": "payments/validators.py::validate_amount",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_validate_currency_success",
+        "target": "payments/validators.py::validate_currency",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_validate_invoice_items_success",
+        "target": "payments/validators.py::validate_invoice_items",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_charge_card_success",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_charge_card_success",
+        "target": "payments/stripe.py::charge_card",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_charge_card_invalid_amount",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_charge_card_invalid_amount",
+        "target": "payments/stripe.py::charge_card",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_refund_charge_success",
+        "target": "payments/stripe.py::refund_charge",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_should_retry_skips_validation_errors",
+        "target": "payments/retry.py::should_retry",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_payments.py::test_retry_payment_operation_runs_function",
+        "target": "payments/retry.py::retry_payment_operation",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_register_user_profile_success",
+        "target": "users/service.py::register_user_profile",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_register_user_profile_invalid_password",
+        "target": "users/service.py::register_user_profile",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_lookup_user_for_auth_by_email",
+        "target": "users/service.py::lookup_user_for_auth",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_get_user_by_email_unknown",
+        "target": "users/repository.py::get_user_by_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_save_user_persists_user",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_save_user_persists_user",
+        "target": "users/repository.py::save_user",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "tests/test_users.py::test_save_user_persists_user",
+        "target": "users/repository.py::get_user_by_id",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/repository.py::get_user_by_email",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/repository.py::save_user",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/repository.py::get_user_by_id",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "utils/decorators.py::audit_action",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "auth/validators.py::normalize_identifier",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "models.py::User",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "users/repository.py::save_user",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::register_user_profile",
+        "target": "users/service.py::_password_hash",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::lookup_user_for_auth",
+        "target": "auth/validators.py::normalize_identifier",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::lookup_user_for_auth",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "users/service.py::lookup_user_for_auth",
+        "target": "users/repository.py::get_user_by_email",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::audit_action",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::require_auth",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::validate_request",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::ensure_not_none",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::require_admin",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::decorator",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::wrapper",
+        "target": "utils/errors.py::AuthenticationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::decorator",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::wrapper",
+        "target": "utils/logging.py::audit_event",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/decorators.py::wrapper",
+        "target": "utils/errors.py::raise_validation_error",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/errors.py::raise_validation_error",
+        "target": "utils/errors.py::ValidationError",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      },
+      {
+        "source": "utils/logging.py::audit_event",
+        "target": "utils/logging.py::get_logger",
+        "resolved": true,
+        "frequency": 1,
+        "type": "calls"
+      }
+    ]
+  }
+}
