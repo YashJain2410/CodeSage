@@ -1,4 +1,32 @@
 from langchain_core.callbacks import BaseCallbackHandler
+from functools import lru_cache
+from langsmith import Client, tracing_context
+
+from app.config import get_settings
+
+
+@lru_cache
+def get_trace_client():
+    settings = get_settings()
+
+    if not settings.langsmith_api_key:
+        raise ValueError("Set LANGSMITH_API_KEY before enabling LangSmith tracing.")
+
+    return Client(
+        api_url=settings.langsmith_endpoint,
+        api_key=settings.langsmith_api_key,
+        workspace_id=settings.langsmith_workspace_id,
+    )
+
+
+def query_tracing():
+    settings = get_settings()
+
+    return tracing_context(
+        enabled=settings.langsmith_tracing,
+        project_name=settings.langsmith_project,
+        client=get_trace_client() if settings.langsmith_tracing else None,
+    )
 
 
 class CodeSageCallbackHandler(BaseCallbackHandler):

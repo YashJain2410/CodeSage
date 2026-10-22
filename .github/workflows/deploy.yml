@@ -1,29 +1,60 @@
-name: Deploy CodeSage
+name: Deployment checks
 
 on:
-
   workflow_run:
+    workflows: [CodeSage CI]
+    types: [completed]
 
-    workflows:
-      - CodeSage CI
-
-    types:
-      - completed
+permissions:
+  contents: read
+  statuses: read
 
 jobs:
-
-  deploy:
-
-    if: >
-      github.event.workflow_run.conclusion == 'success'
-
+  frontend:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy
+      - name: Wait for Vercel to deploy this commit
         run: |
-          echo "Deploy to Railway / Render here"
+          for attempt in $(seq 1 60); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT_SHA/status" \
+              --jq '[.statuses[] | select(.context == "Vercel")][0].state')
+            if [ "$state" = success ]; then exit 0; fi
+            if [ "$state" = failure ] || [ "$state" = error ]; then
+              echo "Vercel deployment failed for $COMMIT_SHA"
+              exit 1
+            fi
+            echo "Waiting for Vercel ($attempt/60)"
+            sleep 10
+          done
+          echo "Timed out waiting for Vercel"
+          exit 1
+      - name: Check the live frontend
+        run: |
+          curl --fail --silent --show-error --retry 3 --max-time 30 \
+            https://code-sage-gray.vercel.app/ -o frontend.html
+          grep -q 'Go from unfamiliar code to a clear understanding.' frontend.html
+
+  backend:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the live Render API
+        run: |
+          curl --fail --silent --show-error --retry 2 --max-time 60 \
+            https://codesage-x5l2.onrender.com/ -o backend.json
+          python - <<'PY'
+          import json
+          with open('backend.json') as file:
+              assert json.load(file)['message'] == 'CodeSage running'
+          PY

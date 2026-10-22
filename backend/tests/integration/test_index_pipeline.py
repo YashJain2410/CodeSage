@@ -1,9 +1,11 @@
 from pathlib import Path
+import pytest
 
 from app.core.indexer.pipeline import IndexingPipeline
 from app.core.indexer.qdrant_store import QdrantCodeStore
 
 
+@pytest.mark.model
 def test_pipeline_indexing(tmp_path: Path):
 
     # create fake repo
@@ -44,9 +46,11 @@ def test_login():
         url=":memory:"
     )
 
-    stats = pipeline.index_repository(
+    runtime = pipeline.index_repository(
         str(repo)
     )
+
+    stats = runtime["stats"]
 
     print("\nPIPELINE STATS:")
     print(stats)

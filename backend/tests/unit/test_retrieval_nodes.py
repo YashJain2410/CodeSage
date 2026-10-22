@@ -1,122 +1,62 @@
+from unittest.mock import patch
+
 import networkx as nx
 
 from app.core.retrieval.intent import QueryIntent
-from app.core.agent.nodes import expand_node
 
-from app.core.agent.nodes import classify_intent_node
-
-from unittest.mock import patch
-from app.core.agent.nodes import retrieve_node
-from app.core.agent.nodes import rerank_node
-from app.core.agent.nodes import assemble_context_node
+# Node tests use test doubles instead of downloading models or calling providers.
+with patch("app.core.indexer.embedder.CodeEmbedder.__init__", return_value=None), \
+     patch("app.core.retrieval.reranker.CrossEncoderReranker.__init__", return_value=None):
+    from app.core.agent import nodes
 
 
-def test_expand_node():
-
-    graph = nx.DiGraph()
-
-    graph.add_edge(
-        "api_handler",
-        "login_user"
-    )
-
-    graph.add_edge(
-        "login_user",
-        "validate_credentials"
-    )
-
+def test_expand_graph_node():
+    graph = nx.MultiDiGraph()
+    graph.add_edge("api_handler", "login_user")
+    graph.add_edge("login_user", "validate_credentials")
     state = {
         "query": "why does login fail",
         "intent": QueryIntent.BUG,
         "graph": graph,
-        "retrieved_nodes": [
-            ("login_user", 0.95)
-        ]
+        "seed_results": [("login_user", 0.95)],
     }
 
-    result = expand_node(state)
+    result = nodes.expand_graph_node(state)
 
-    expanded = result["expanded_nodes"]
-
-    assert "login_user" in expanded
-    assert "api_handler" in expanded
-    assert "validate_credentials" in expanded
+    assert {"login_user", "api_handler", "validate_credentials"} <= set(
+        result["expanded_results"]
+    )
 
 
 def test_classify_bug():
-
-    state = {
-        "query": "why does login fail"
-    }
-
-    result = classify_intent_node(state)
-
+    result = nodes.classify_intent_node({"query": "why does login fail"})
     assert result["intent"] == QueryIntent.BUG
 
 
-@patch(
-    "app.core.agent.nodes.retriever.search"
-)
-def test_retrieve_node(mock_search):
+def test_retrieve_node():
+    with patch.object(nodes.app_state.retriever, "search", return_value=[("login_user", 0.91)]):
+        result = nodes.retrieve_node({"query": "login failure"})
 
-    mock_search.return_value = [
-        ("login_user", 0.91)
-    ]
-
-    state = {
-        "query": "login failure"
-    }
-
-    result = retrieve_node(state)
-
-    assert result["retrieved_nodes"] == [
-        ("login_user", 0.91)
-    ]
+    assert result["seed_results"] == [("login_user", 0.91)]
 
 
-@patch(
-    "app.core.agent.nodes.reranker.rerank"
-)
-def test_rerank_node(mock_rerank):
+def test_rerank_node():
+    with patch.object(nodes.reranker, "rerank", return_value=[("login_user", 0.99)]):
+        result = nodes.rerank_node({
+            "query": "login failure",
+            "graph": nx.MultiDiGraph(),
+            "expanded_results": ["login_user"],
+        })
 
-    mock_rerank.return_value = [
-        ("login_user", 0.99)
-    ]
-
-    state = {
-        "query": "login failure",
-        "graph": nx.DiGraph(),
-        "expanded_nodes": [
-            "login_user"
-        ]
-    }
-
-    result = rerank_node(state)
-
-    assert result["reranked_nodes"] == [
-        ("login_user", 0.99)
-    ]
+    assert result["ranked_results"] == [("login_user", 0.99)]
+    assert result["retrieved_func_ids"] == ["login_user"]
 
 
-@patch(
-    "app.core.agent.nodes.assembler.assemble"
-)
-def test_assemble_context_node(mock_assemble):
+def test_assemble_context_node():
+    with patch.object(nodes.assembler, "assemble", return_value="login_user validates credentials"):
+        result = nodes.assemble_context_node({
+            "graph": nx.MultiDiGraph(),
+            "ranked_results": [("login_user", 0.95)],
+        })
 
-    mock_assemble.return_value = (
-        "login_user validates credentials"
-    )
-
-    state = {
-        "graph": nx.DiGraph(),
-        "reranked_nodes": [
-            ("login_user", 0.95)
-        ]
-    }
-
-    result = assemble_context_node(state)
-
-    assert (
-        result["context"]
-        == "login_user validates credentials"
-    )
+    assert result["assembled_context"] == "login_user validates credentials"

@@ -1,12 +1,8 @@
-from fastapi import FastAPI, Request
-import time
-from uuid import uuid4
+from fastapi import FastAPI
 import structlog
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from fastapi.responses import Response
 
 from app.observability.structured_log import setup_logging
-from app.observability.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from app.observability.http import setup_request_metrics
 from app.dependencies import ConfigDep
 from app.api.routes.query import router as query_router
 from app.api.routes.metrics import router as metrics_router
@@ -40,6 +36,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+setup_request_metrics(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -61,7 +59,3 @@ app.include_router(repositories_router)
 @app.get("/")
 def root(config: ConfigDep):
     return {"message": "CodeSage running"}
-
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

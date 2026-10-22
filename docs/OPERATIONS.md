@@ -61,7 +61,7 @@ Start them again using [Getting started](GETTING-STARTED.md). After an API resta
 - Source folders and Qdrant payloads keep copies of imported code.
 - Back up PostgreSQL, Qdrant, source folders, and the matching app version together. Test that they can be restored.
 
-The supplied Compose file uses development passwords and has no persistent data volumes. Recreating containers can lose data. A database backup alone cannot rebuild the active graph.
+The supplied Compose file uses development passwords. Monitoring has persistent volumes; the database and source services still need their own backup setup. A database backup alone cannot rebuild the active graph.
 
 ## Monitor problems
 
@@ -70,12 +70,13 @@ The supplied Compose file uses development passwords and has no persistent data 
 | API logs | Import, database, model, and search errors |
 | `/metrics` | Recorded request and search measurements |
 | Prometheus | The configured target is `host.docker.internal:8000` |
-| Grafana | Import the [dashboard JSON](../infra/grafana/dashboards/codesage.json) manually |
+| Grafana | Open the automatically loaded dashboard on port 3001 |
+| LangSmith | Enable tracing and verify that workflow traces arrive |
 
-Grafana uses port 3000 in Compose, which conflicts with the frontend. The root API route only returns a message; it is not a health check.
+See [Monitoring and CI](MONITORING.md) for commands and settings. The root API route only returns a message; it does not check database, model, or vector-store readiness.
 
 ## Before public deployment
 
 Add login, user permissions, separate repository state, upload limits, persistent storage, HTTPS, service health checks, and a tested restore process.
 
-The production Compose file is empty, and the deploy workflow is a placeholder. Hosted Git deployments use Vercel and Render settings. See [Testing](TESTING.md) for the recorded checks.
+The production Compose file is empty. Hosted Git deployments use Vercel and Render settings; GitHub checks verify the resulting services. See [Testing](TESTING.md) for the recorded checks.

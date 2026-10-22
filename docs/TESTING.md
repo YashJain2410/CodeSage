@@ -30,13 +30,15 @@ With the Python environment active, run from the repository root:
 
 ```bash
 cd backend
-python -m pytest tests/unit/test_github.py tests/integration/test_github_import.py -q
-python -m pytest tests/unit/test/test_queries.py
+python -m pytest -m 'not model' -q
+python -m pytest -q
 ```
 
-The import tests check URLs, clone errors, cleanup, saved results, continued ZIP support, and an empty repository. Their API tests replace external calls with test doubles. Importing the test modules still needs the backend dependencies, settings, and model files.
+The first command runs CI's automated tests without model downloads, private keys, or live services. The second also runs the real embedding and in-memory Qdrant integration; it needs the embedding model files.
 
-The graph-query tests run without external services. The full suite is `python -m pytest tests`. Some older tests need fixes or external services, so it is not a verified release check.
+The import API tests replace external calls with test doubles. Old scripts that make live Gemini, Celery, embedding, or Qdrant calls during import are excluded from pytest collection; run those scripts directly when needed. Sample repository files are fixtures, not application tests.
+
+On **23 October 2026**, all 54 automated backend tests passed, including the real model integration. CI's 53 tests also passed locally without loading `.env`. Monitoring tests check successful requests, errors, route labels, and LangGraph parent and child trace export. A real API request was collected by Prometheus and queried through Grafana. Hosted LangSmith still requires a configured API key.
 
 ## GitHub import
 
@@ -69,6 +71,6 @@ The [golden question set](../backend/app/evaluation/golden_set.json) lists quest
 | Context recall / precision | Was the needed code found, with little unrelated code? |
 | Test mention rate | Did the answer mention relevant tests? |
 
-Evaluation is unfinished: its API route is not registered, `baseline.json` is missing, and Ragas is absent from the requirements. The CI quality checks also reference missing entry points. The deploy workflow is a placeholder.
+Evaluation is unfinished: its API route is not registered, `baseline.json` is missing, and Ragas is absent from the requirements. CI does not claim to run this evaluation. See [Monitoring and CI](MONITORING.md) for the working workflow checks.
 
-The full backend suite, live answer quality, public deployment, and arbitrary repository sizes have not been verified. Demo scores are examples.
+Live answer quality, the hosted backend, and arbitrary repository sizes have not been verified. Demo scores are examples.

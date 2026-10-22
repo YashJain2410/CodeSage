@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     gemini_api_key: str
     openai_api_key: Optional[str] = None
 
+    # Tracing
+    langsmith_tracing: bool = False
+    langsmith_api_key: Optional[str] = None
+    langsmith_project: str = "codesage"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_workspace_id: Optional[str] = None
+
     # Services
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: Optional[str] = None

@@ -1,16 +1,19 @@
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 from zipfile import ZipFile
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
-from app.api.routes.repositories import router
 from app.core.indexer.pipeline import IndexingPipeline
 from app.db.dependencies import get_db
-from app.services import repository_service as service_module
+
+# These API tests replace indexing below; model downloads are not part of them.
+with patch("app.core.indexer.embedder.CodeEmbedder.__init__", return_value=None):
+    from app.api.routes.repositories import router
+    from app.services import repository_service as service_module
 
 
 @pytest.fixture

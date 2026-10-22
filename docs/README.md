@@ -17,6 +17,7 @@ flowchart LR
 | [API](API.md) | Find working routes and request examples |
 | [Testing](TESTING.md) | Run checks and see what was tested |
 | [Operations](OPERATIONS.md) | Build, monitor, and restart the app |
+| [Monitoring and CI](MONITORING.md) | Run Prometheus, Grafana, LangSmith, and workflow checks |
 | [Frontend](../frontend-next/README.md) | Find screens and frontend settings |
 | [API contract](../frontend-next/API-CONTRACT.md) | Connect the UI to current or planned routes |
 | [Design](../frontend-next/DESIGN.md) | Follow the UI rules |

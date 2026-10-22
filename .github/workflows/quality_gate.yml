@@ -1,30 +1,46 @@
-name: CodeSage Quality Gate
+name: Monitoring configuration
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  evaluate:
+  monitoring:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install
+          python-version: "3.12"
+      - name: Validate Compose
+        run: docker compose -f infra/docker-compose.yml config --quiet
+      - name: Validate Prometheus
         run: |
-          pip install -r requirements.txt
-
-      - name: Unit Tests
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            prom/prometheus check config /etc/prometheus/prometheus.yml
+      - name: Validate Grafana provisioning
         run: |
-          pytest
+          python -m pip install PyYAML==6.0.2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
 
-      - name: Evaluation
-        run: |
-          python scripts/evaluate.py
+          root = Path('infra/grafana')
+          source = yaml.safe_load((root / 'provisioning/datasources/prometheus.yml').read_text())
+          provider = yaml.safe_load((root / 'provisioning/dashboards/codesage.yml').read_text())
+          dashboard = json.loads((root / 'dashboards/codesage.json').read_text())
+          uid = source['datasources'][0]['uid']
+          assert provider['providers'][0]['options']['path'] == '/var/lib/grafana/dashboards'
+          assert dashboard['panels'], 'Dashboard must contain panels'
+          for panel in dashboard['panels']:
+              assert panel['datasource']['uid'] == uid
+              assert panel['targets'][0]['expr']
+          print('Grafana data source and dashboard agree')
+          PY

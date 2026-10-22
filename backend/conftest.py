@@ -1,5 +1,14 @@
 import sys
 
+# These files are manual service checks, not pytest tests. They make live calls
+# during import, so run them directly when their services are configured.
+collect_ignore = [
+    "tests/unit/test/test_celery.py",
+    "tests/unit/test/test_embedding.py",
+    "tests/unit/test/test_gemini.py",
+    "tests/integration/test_embedding_qdrant.py",
+]
+
 def pytest_sessionstart(session):
     print("\n========== PYTEST START ==========")
 

@@ -3,7 +3,8 @@ import networkx as nx
 
 from app.core.agent.graph import graph
 from app.core.agent.state import AgentState
-from app.observability.langsmith import CodeSageCallbackHandler
+from app.observability.langsmith import CodeSageCallbackHandler, query_tracing
+from app.observability.metrics import QUERY_COUNT
 from app.core.runtime.application_state import app_state
 
 
@@ -72,11 +73,16 @@ class QueryService:
 
         handler = CodeSageCallbackHandler()
 
-        result = graph.invoke(
-            state,
-            config = {
-                "callbacks" : [handler]
-            },
-        )
+        with query_tracing():
+            result = graph.invoke(
+                state,
+                config = {
+                    "callbacks": [handler],
+                    "run_name": "CodeSage query",
+                    "run_id": uuid.UUID(state["trace_id"]),
+                },
+            )
+
+        QUERY_COUNT.inc()
 
         return result

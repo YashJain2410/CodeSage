@@ -2,48 +2,59 @@ name: CodeSage CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
-
+    branches: [main, develop]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-
-  test:
-
+  frontend:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: frontend-next
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend-next/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: test-key
+      DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/codesage
+      LANGSMITH_TRACING: "false"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install dependencies
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install CPU dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-
-      - name: Run unit tests
-        working-directory: backend
-        run: |
-          pytest
-
-      - name: Run evaluation harness
-        working-directory: backend
-        run: |
-          python -m app.evaluation.run_eval
-
-      - name: Upload evaluation report
-        uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-report
-          path: backend/evaluation_results/
+          python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q app
+      - name: Run automated tests without live model calls
+        run: python -m pytest -m 'not model' -q
