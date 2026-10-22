@@ -4,6 +4,10 @@ CodeSage helps you understand a codebase. Import code, ask questions, and see ho
 
 Built by [Yash Jain](https://github.com/YashJain2410) with Next.js, FastAPI, and Qdrant.
 
+**Live app:** [code-sage-gray.vercel.app](https://code-sage-gray.vercel.app/)
+
+The frontend and demo are live. Live import and chat are unavailable: the backend exceeds Render's free 512 MB memory limit while loading its model.
+
 ```mermaid
 flowchart LR
     A[GitHub or ZIP] --> B[Read the code]

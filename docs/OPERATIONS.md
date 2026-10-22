@@ -1,10 +1,10 @@
 # Operations
 
-Use CodeSage as a local development app. Public deployment is not ready yet.
+The [frontend and demo](https://code-sage-gray.vercel.app/) are live on Vercel. Live import and chat are unavailable: the Render backend runs out of memory while loading its embedding model on the free 512 MB plan.
 
 ```mermaid
 flowchart TD
-    A[Frontend] --> B[Python API]
+    A[Vercel: frontend-next] -->|API proxy| B[Render: Python API]
     B --> C[PostgreSQL]
     B --> D[Qdrant]
     B --> E[Model provider]
@@ -20,6 +20,15 @@ npm start
 ```
 
 Set `CODESAGE_BACKEND_URL` and `NEXT_PUBLIC_API_MODE=current` before building. Rebuild after changing them.
+
+## Hosted settings
+
+- Vercel uses `frontend-next` as the root directory and the default Next.js build.
+- `CODESAGE_BACKEND_URL` points to `https://codesage-x5l2.onrender.com`.
+- `NEXT_PUBLIC_API_URL=/api/backend` sends browser requests through the frontend proxy.
+- Render stays on the free plan. The current local models need more memory; a successful frontend build does not mean live indexing works.
+
+## Docker builds
 
 For a frontend Docker image, run from the same folder:
 
@@ -69,4 +78,4 @@ Grafana uses port 3000 in Compose, which conflicts with the frontend. The root A
 
 Add login, user permissions, separate repository state, upload limits, persistent storage, HTTPS, service health checks, and a tested restore process.
 
-The production Compose file is empty, and the deploy workflow is a placeholder. The Next.js build has also reported a security-version warning; update the dependency before public deployment. See [Testing](TESTING.md) for the recorded checks.
+The production Compose file is empty, and the deploy workflow is a placeholder. Hosted Git deployments use Vercel and Render settings. See [Testing](TESTING.md) for the recorded checks.

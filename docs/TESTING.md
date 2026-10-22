@@ -54,6 +54,8 @@ Recorded on **22 October 2026**:
 
 The real check used Git, the embedding model, PostgreSQL, and Qdrant. Local services were started and existing database migrations applied. Environment settings were preserved. The build reported a Next.js security-version warning.
 
+Deployment checks on **23 October 2026**: Next.js and its ESLint config were updated to 16.4.2. Type checking, lint, all nine frontend tests, and the production build passed. The production dependency audit found no vulnerabilities. The deployed demo opened successfully. Render's free backend failed during model loading because it exceeded 512 MB; hosted live import remains unverified.
+
 ## Answer-quality evaluation
 
 The [golden question set](../backend/app/evaluation/golden_set.json) lists questions and expected code.
