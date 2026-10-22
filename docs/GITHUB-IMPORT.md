@@ -1,92 +1,88 @@
 # GitHub import
 
-GitHub import accepts a public repository URL, downloads its default branch, and uses the existing ZIP indexing flow. Local-path import has been removed from the frontend and backend.
-
-## Architecture
+Paste a public GitHub repository URL to import its default branch. GitHub and ZIP imports share the same indexing code. Local-path import has been removed.
 
 ```mermaid
 flowchart TD
-    A[Paste a public GitHub URL] --> B[POST /repositories/github]
-    B --> C[Validate the URL]
-    C --> D[Clone into a new workspace]
-    D --> E[Existing indexing service]
-    Z[ZIP upload] --> E
-    E --> F[Parse code and build the graph]
-    F --> G[Generate embeddings and store vectors in Qdrant]
-    G --> H[Save repository details in PostgreSQL]
-    H --> I[Return READY and open chat]
+    A[Public GitHub URL] --> B[Validate and clone]
+    B --> C[Existing indexing service]
+    Z[ZIP upload] --> C
+    C --> D[Graph and Qdrant vectors]
+    D --> E[PostgreSQL record and READY]
 ```
 
-## How the code works
+## Use it
 
-### 1. Receive the URL
+Start the app using [Getting started](GETTING-STARTED.md). The backend needs Git, PostgreSQL, Qdrant, and its embedding model.
 
-[`frontend-next/src/components/RepositoryManager.tsx`](../frontend-next/src/components/RepositoryManager.tsx) keeps the existing GitHub tab and URL field. The local-path tab, its icon, and its conditional form text are removed. A URL passed from the landing page now always selects GitHub import.
+Choose **Live mode → Repositories → GitHub**. Enter `https://github.com/owner/repo`. An ending of `.git`, `/`, or `.git/` is also accepted. Private repositories are not supported.
 
-The browser checks that the input looks like an HTTPS GitHub repository URL. It accepts an optional `.git` ending and trailing slash. This gives quick feedback; the backend performs its own validation before running Git.
+## Follow the code
 
-[`frontend-next/src/lib/api.ts`](../frontend-next/src/lib/api.ts) puts the URL into a `FormData` field named `github_url` and posts it to `/repositories/github`. This was already the frontend's intended GitHub request format. The old request that sent a server folder path to `/index` is removed.
+| File | What it does |
+| --- | --- |
+| [RepositoryManager.tsx](../frontend-next/src/components/RepositoryManager.tsx) | Reads the URL, shows errors, saves the ready repository, and opens chat |
+| [api.ts](../frontend-next/src/lib/api.ts) | Sends the URL in the `github_url` form field |
+| [repositories.py](../backend/app/api/routes/repositories.py) | Handles `POST /repositories/github` and gets a database session |
+| [github.py](../backend/app/repositories/github.py) | Checks the URL and runs Git |
+| [repository_service.py](../backend/app/services/repository_service.py) | Creates a workspace, runs the import, and saves the result |
+| [pipeline.py](../backend/app/core/indexer/pipeline.py) | Parses code, builds the graph, and stores vectors |
 
-Import requests now have a ten-minute browser timeout, matching the existing proxy setting. `AbortSignal.any` combines that timeout with the Cancel button's signal: either one can stop the browser request. Cancellation does not guarantee that indexing has stopped on the backend.
+### Check the URL
 
-The existing submit handler checks the returned status. A completed import returns a repository ID, `READY`, and node/edge counts. The frontend saves that repository in browser history, refreshes the graph query, and opens chat. Older live repository entries still need re-indexing because the existing backend holds one active graph.
+`validate_url` removes outside spaces and checks the whole URL. Only HTTPS, the exact `github.com` host, an owner, and a repository name are allowed.
 
-### 2. Handle the request
+The first regex group is the owner; the second is the repository name. Optional `.git` and `/` endings are removed. Credentials, extra paths, query strings, other hosts, `.` and `..` are rejected.
 
-[`backend/app/api/routes/repositories.py`](../backend/app/api/routes/repositories.py) now registers `POST /repositories/github` on the router that `main.py` already mounts. `Form(...)` reads the URL. `Depends(get_db)` supplies the existing database session.
+The browser checks the format for quick feedback. The service validates before creating a workspace. The Git helper validates again so direct calls are also checked.
 
-The route calls `repository_service.import_github`. An existing `HTTPException` keeps its status and message. A `ValueError`, such as an invalid URL or a repository without supported symbols, becomes HTTP 400. Other failures use HTTP 500, matching the existing ZIP route's error handling.
+### Download the code
 
-### 3. Validate and clone
+`clone` passes Git a list of arguments. The URL is never run as a shell command.
 
-[`backend/app/repositories/github.py`](../backend/app/repositories/github.py) contains the Git-specific work:
+| Option | Why it is used |
+| --- | --- |
+| `--depth 1` | Download only the latest history entry |
+| `--single-branch` | Download the default branch |
+| `--` | End Git options before the URL and folder |
+| `credential.helper=` | Avoid using saved login helpers |
+| `GIT_TERMINAL_PROMPT=0`, empty `GIT_ASKPASS` | Prevent login prompts |
+| `http.followRedirects=false` | Keep Git from following redirects |
+| `check=True` | Raise an error if Git fails |
+| `capture_output=True`, `text=True` | Read Git errors as text |
+| `timeout=120` | Stop waiting for a clone after two minutes |
 
-- `validate_url` trims surrounding spaces and checks the entire URL with `re.fullmatch`. It permits only HTTPS, the exact `github.com` host, an owner, and a repository name. It rejects credentials, query strings, extra paths, other hosts, and the special names `.` and `..`.
-- The first regex group is the owner; the second is the repository name. Optional `.git` and trailing slash are removed so the service receives one consistent URL format.
-- `clone` validates again so this helper remains safe when called directly. It adds `.git` to the normalized URL and runs Git with a list of arguments. The input is never executed as a shell command.
-- `--depth 1` downloads the latest history entry. `--single-branch` limits the checkout to the default branch. `--` separates Git options from the URL and destination.
-- `credential.helper=` disables saved credential helpers for this command. `GIT_TERMINAL_PROMPT=0` and an empty `GIT_ASKPASS` prevent a public import from opening a login prompt.
-- `http.followRedirects=false` keeps Git from following the URL to another destination.
-- `check=True` raises an error when Git fails. `capture_output=True` and `text=True` make Git's error message available as text. `timeout=120` limits cloning to two minutes.
+`run_in_threadpool` runs the blocking clone while the API waits. It does not create a background indexing job.
 
-The exception handlers translate failures into useful responses: missing or private repository → 404; connection/clone failure → 502; Git not installed → 503; clone timeout → 504. Private repository authentication is not part of this feature.
+### Index and save
 
-### 4. Reuse the existing indexing flow
+`import_github` creates a unique workspace and a repository folder inside it. After cloning, it calls `_index_repository`, which is also used by ZIP upload.
 
-[`backend/app/services/repository_service.py`](../backend/app/services/repository_service.py) adds `import_github` and extracts the existing ZIP indexing/database code into `_index_repository`.
+That shared method calls the existing index service, creates the database record, saves statistics, and returns the repository ID, `READY`, nodes, and edges. GitHub records also store the URL and `source_type="github"`. Source size excludes `.git` history.
 
-`import_github` validates the URL before creating a workspace. It uses the existing storage helper to create a unique workspace, then chooses a repository directory inside it. `run_in_threadpool` lets the blocking Git command run while the API waits for it. It does not create a background indexing job.
+The frontend allows ten minutes for import, matching the proxy. `AbortSignal.any` combines the timeout and Cancel button. Cancelling stops the browser request; the backend may still finish.
 
-After cloning, `_index_repository` calls the same `index_service.index_repository` used by ZIP upload. That existing service builds the graph, vectors, and keyword search index, and activates the repository in application state. The shared method creates the database record, saves the existing statistics, and returns the existing response format. GitHub records also save `source_type="github"` and the normalized URL. The size calculation excludes Git's `.git` directory so downloaded history is not counted as source code.
+### Handle failures
 
-If GitHub import fails, the service rolls back the pending database transaction and removes that import's workspace before passing the error back to the route. It never reports a failed import as `READY`.
+| Code | Problem |
+| --- | --- |
+| 400 | Invalid URL or no supported functions/classes |
+| 404 | Missing or private repository |
+| 500 | Indexing, database, or another server error |
+| 502 | Clone connection failed |
+| 503 | Git is missing |
+| 504 | Clone timed out |
 
-### 5. Reject repositories without usable code
+The route keeps known HTTP errors, converts `ValueError` to 400, and uses 500 for other errors. The service rolls back the pending database work and removes the failed import's workspace.
 
-[`backend/app/core/indexer/pipeline.py`](../backend/app/core/indexer/pipeline.py) now rejects an empty list of parsed symbols with a clear message. Supported input remains Python, JavaScript, and TypeScript as provided by the existing parser.
+The pipeline rejects empty results before resetting Qdrant. Parsing or embedding failure therefore preserves the previous vectors. Failure during vector upload still has no automatic restore.
 
-The vector collection is reset after parsing and embedding succeed. Previously it was reset before reading the repository. This small ordering change preserves the current vectors when a new repository has no supported symbols or fails before vector upload. It does not add transactional rollback for a failure during vector upload.
+### Remove the old path
 
-### 6. Remove the old feature and duplicate stub
+The local-path route, request schema, client branch, folder-copy methods, and UI controls were removed. The unused GitHub route and unfinished manager method were also removed, leaving one active GitHub implementation. The fake API now models GitHub import.
 
-`main.py` no longer mounts the local-path router. Its unused route and request schema are deleted. The unused folder-copy methods are also removed. The old, unmounted GitHub route and its `NotImplementedError` method are removed so there is one GitHub implementation.
+## Checks
 
-The landing page, Settings, workspace guide, and earlier frontend no longer advertise local-path import. The API documentation describes GitHub as available in current mode. `tests/mock-api.mjs` now models the GitHub multipart request instead of local-path indexing; it remains a browser fixture rather than evidence of real indexing.
+The helper tests cover URL checks, Git options, and clone errors. The API tests cover success, missing input, cleanup, and ZIP support. A real browser import also passed. Commands and results are in [Testing](TESTING.md#github-import).
 
-## Verification
-
-Run the focused backend tests from `backend/`:
-
-```bash
-../.venv/bin/python -m pytest tests/unit/test_github.py tests/integration/test_github_import.py -q
-```
-
-`test_github.py` checks URL normalization and rejection, Git command options, and clone error messages. `test_github_import.py` checks the actual HTTP router/service flow with cloning, indexing, and database calls replaced by test doubles. It verifies successful import, required input, failure cleanup, continued ZIP support, and preservation of the vector collection for an empty repository.
-
-The live checks use the real Git command, embedding model, PostgreSQL, and Qdrant. Importing `https://github.com/pallets/itsdangerous` through the frontend proxy returned `READY`, 256 graph nodes, and 342 edges. PostgreSQL contained the corresponding GitHub repository record, and Qdrant contained 135 vectors. Invalid, missing, and unsupported-code imports returned the expected errors while preserving that graph and those vectors. A browser import using `.git/` also completed and opened chat with the repository active. See [testing](TESTING.md) for the project's broader verification limits.
-
-## Running locally
-
-The backend needs Git, PostgreSQL with the existing migrations applied, Qdrant, and the embedding model. Start the data services using the existing Compose file. Use live mode in the frontend and the current API contract, then choose GitHub on the Repositories screen.
-
-The current settings code reads the repository-root `.env`. Its database credentials must match the local PostgreSQL instance. GitHub import does not require a GitHub token or execute code from the imported repository.
+Only one repository is active at a time. Import again after restarting the API.

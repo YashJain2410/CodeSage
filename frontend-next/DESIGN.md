@@ -1,40 +1,38 @@
-# Design direction
+# UI design
 
-CodeSage is a reading and reasoning tool. Its identity comes from connected source code, not ornamental AI effects.
+Make code easy to read and the next action easy to find.
 
-## References and decisions
+```mermaid
+flowchart LR
+    A[Workspace navigation] --> B[Repository screen]
+    A --> C[Chat and source viewer]
+    A --> D[Code graph]
+```
 
-| Reference | Applied principle |
+## Look and feel
+
+| Part | Rule |
 | --- | --- |
-| [Phantom](https://phantom.com) | Lavender palette, rounded public navigation and buttons, generous card shapes |
-| [Linear](https://linear.app) | Persistent workspace navigation, quiet surfaces, structured information hierarchy |
-| [Cursor](https://cursor.com), [Warp](https://www.warp.dev) | Show the actual developer workflow and source context |
-| [Vercel](https://vercel.com), [Resend](https://resend.com) | Crisp technical diagrams and economical product copy |
-| [Anthropic](https://www.anthropic.com), [Mercury](https://mercury.com) | Editorial spacing and a restrained serif accent in the cover heading |
-| [Sarvam](https://www.sarvam.ai), [LangChain](https://www.langchain.com), [Together AI](https://www.together.ai) | Organize a complex platform into comprehensible workflows |
-| [MongoDB](https://www.mongodb.com), [Supabase](https://supabase.com) | Developer-oriented source inputs, technical credibility, clear feature structure |
-| [OpenAI](https://openai.com), [Microsoft AI](https://microsoft.ai), [Google AI](https://ai.google) | Broad, readable sections with a clear path into the product |
-| [Apple](https://www.apple.com), [Raycast](https://www.raycast.com), [Framer](https://www.framer.com) | Carefully composed product views and deliberate typography scale |
-| [Stripe](https://stripe.com), [Notion](https://www.notion.com), [ElevenLabs](https://elevenlabs.io) | Explain complex capabilities through tangible, interactive examples |
+| Background | Light `#F8F7FB`; dark cover `#191522` |
+| Text | Main color `#282331` |
+| Accent | Purple `#7C65C1`, deep purple `#3D2F6B`, lavender `#EAE8F5` |
+| Fonts | Inter for the UI; JetBrains Mono for code and paths |
+| Cards | Rounded corners, clear labels, enough space between sections |
+| Themes | Support light, dark, and system settings |
+| Motion | Keep it brief; respect reduced-motion settings |
 
-Primary reference sites were reviewed through their public pages, with visual inspection of Linear and Phantom. This is a synthesis of design principles, not a reproduction of any site's branding or a claim to have audited every page or app behind these sites.
+Fonts are served by the app. Use the serif accent only on the landing page.
 
-## Visual system
+## Content rules
 
-- Light base: `#F8F7FB`; foreground: `#282331`; dark cover: `#191522`.
-- Purple: `#7C65C1`; deep purple: `#3D2F6B`; lavender: `#EAE8F5`; secondary: `#B8A9E0`.
-- Light workspace is the default. Dark and system modes are complete. The serif accent appears only on the public cover to give the product its own voice.
-- Inter provides interface typography; JetBrains Mono is reserved for paths, source, and technical annotations. Both are self-hosted.
-- Cards use 14–24px corners. Pills are used for navigation, calls to action, and small status indicators. Code text stays on a stable dark source surface in both themes.
-- Motion clarifies changes: brief route fades, restrained diagram movement, message entrances, and score transitions. Reduced-motion preferences disable nonessential movement.
+- Use short labels and plain language.
+- Show whether the workspace is live or a demo.
+- Show real errors and backend status.
+- Treat missing test coverage as unknown.
+- Keep source code readable in both themes.
+- On mobile, let users switch between chat and source.
+- Keep graph views focused; the UI shows up to 350 symbols at a time.
 
-## Product rules
+Chats and repository history stay in the browser. Source previews disappear on refresh. Show these limits where users need them.
 
-- No invented customer trust marks, measurements, or backend status.
-- Sample answers, source, and metrics have a visible environment label.
-- Live errors remain errors. They never silently turn into simulated successes.
-- Missing test coverage is unknown, not zero.
-- Source inspection, intent, confidence, and citations have separate visual roles.
-- Large graphs have focused neighborhoods and a documented rendering bound.
-- Mobile chat preserves both panels using tabs; exports and graph tools remain accessible.
-- Saved workspace data is browser-local; credential and API behavior is explained in Settings and the guide.
+See [Frontend](README.md) for screens and [QA](QA.md) for recorded checks.

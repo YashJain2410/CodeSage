@@ -1,8 +1,18 @@
 # Getting started
 
-## Frontend demo
+Use the demo to explore the interface. Start the backend when you want to import your own code.
 
-From the repository root, with Node.js 20.9+ installed:
+```mermaid
+flowchart TD
+    A[Start the frontend] --> B[Demo with sample data]
+    A --> C[Live mode]
+    D[Python API and local services] --> C
+    C --> E[Import GitHub or ZIP]
+```
+
+## 1. Start the frontend
+
+Use Node.js 20.9 or later. Run from the repository root:
 
 ```bash
 cd frontend-next
@@ -11,13 +21,13 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000), then **Explore the demo**. Sample code comes from the [test fixture](../backend/tests/fixtures/sample_repo/); answers and telemetry are prepared examples.
+Open [localhost:3000](http://localhost:3000). **Explore the demo** needs no backend or API key.
 
-## Local backend
+## 2. Set up the backend
 
-Use Python 3.12, Docker Compose, and a Gemini API key. The backend downloads embedding and reranking models on first use. These steps configure development services; they do not resolve the [known integration gaps](API.md#current-limitations).
+You need Python 3.12, Git, Docker Compose, and a Gemini API key. Models download on first use.
 
-From the repository root:
+In another terminal, run from the repository root:
 
 ```bash
 python3.12 -m venv .venv
@@ -26,7 +36,18 @@ python -m pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
-Edit the repository-root `.env`: set `GEMINI_API_KEY`, keep the sample local database URL, and remove the empty `REPO_PATH=` line to use the settings default. Keep credentials out of Git. Backend settings read **the repository-root `.env`**, regardless of the current directory. Git must also be installed for GitHub import.
+Edit the root `.env`:
+
+- Set `GEMINI_API_KEY`.
+- Keep the example `DATABASE_URL` when using the supplied Docker database.
+- Delete the blank `REPO_PATH=` line to use the default folder.
+- Add `OPENAI_API_KEY` only if you want OpenAI answers.
+
+If `.env` already exists, edit it instead of copying over it. Keep keys out of Git.
+
+## 3. Start the API and services
+
+From the repository root, with the Python environment active:
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d postgres redis qdrant
@@ -35,33 +56,22 @@ python -m alembic -c ../alembic.ini upgrade head
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Run migrations from `backend/` so Alembic finds the same `.env`. The API uses asyncpg; migrations convert the URL to the synchronous PostgreSQL driver.
+Open the [API docs](http://localhost:8000/docs) to check the routes.
 
-In a second terminal, start the frontend as above and switch Settings to live mode. Use `NEXT_PUBLIC_API_MODE=current`. Inspect [localhost:8000/docs](http://localhost:8000/docs) for the running API schema.
+## 4. Import your code
 
-## Configuration
+In the frontend, choose **Switch to live**, then open **Repositories**. Import a public GitHub URL or upload a ZIP.
 
-| Setting | Purpose / current behavior |
-| --- | --- |
-| `GEMINI_API_KEY` | Required by backend settings and the intent-classifier fallback. |
-| `OPENAI_API_KEY` | Optional; needed when selecting an OpenAI answer model. |
-| `DATABASE_URL` | PostgreSQL connection; use the example development credentials locally. |
-| `QDRANT_API_KEY` | Optional vector-store credential. |
-| `QDRANT_URL` | Declared in settings; current store constructors default to localhost. Verify wiring before using a remote store. |
-| `REDIS_URL` | Celery broker/result store; current upload indexing runs synchronously. |
-| `EMBED_MODEL`, `EMBED_BATCH_SIZE` | Declared settings; current embedder defaults are used by the pipeline. |
-| `REPO_PATH` | Startup directory; ZIP storage currently uses `backend/workspaces/` when run from `backend/`. |
-| `CODESAGE_BACKEND_URL` | Next.js proxy destination; default `http://127.0.0.1:8000`. Rebuild production after changing it. |
-| `NEXT_PUBLIC_API_MODE` | `current` for this backend; `planned` only after adopting the proposed contract. |
+Keep `NEXT_PUBLIC_API_MODE=current` in `frontend-next/.env.local`. The default backend address is `http://127.0.0.1:8000`. Change `CODESAGE_BACKEND_URL` and restart the frontend if needed.
 
 ## Common problems
 
-| Symptom | Check |
+| Problem | Check |
 | --- | --- |
-| Port 3000 is busy | Grafana uses 3000 in the local Compose file. Start only the three data services or change Grafana's host port. |
-| Settings validation fails | Confirm the repository-root `.env` contains a key and database URL; remove blank optional path values. |
-| Graph returns 404 | No graph is loaded in the current API process. Re-import a public GitHub repository or upload a ZIP after restarting. |
-| GitHub import fails | Use a public HTTPS repository URL. Git, PostgreSQL, Qdrant, and the embedding model must be available on the backend. See the [import walkthrough](GITHUB-IMPORT.md). |
-| Live controls are unavailable | They depend on mounted backend routes. Check `/openapi.json`; demo mode remains independently usable. |
+| Database login fails | Root `.env` credentials must match PostgreSQL |
+| Settings fail to load | Set the required key and database URL; remove blank `REPO_PATH` |
+| GitHub import fails | Use a public repository URL; check Git, PostgreSQL, and Qdrant |
+| Graph is empty after restart | Import the repository again |
+| Port 3000 is busy | Grafana also uses 3000 in Compose; start only the data services above |
 
-Stop local data services from the repository root with `docker compose -f infra/docker-compose.yml stop`. See [operations](OPERATIONS.md) before rebuilding or deleting containers.
+See [API limits](API.md#current-limitations) and [Operations](OPERATIONS.md) for details.

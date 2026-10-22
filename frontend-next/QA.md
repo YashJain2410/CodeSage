@@ -1,40 +1,46 @@
-# Verification record
+# Frontend verification
 
-Checked on 7 October 2026. This record covers the original frontend verification. Its scope is `frontend-next/`; later repository documentation changes are separate.
+This is a record of completed checks. It is not a guarantee that every feature works.
 
-## Automated checks
+```mermaid
+flowchart LR
+    A[Code checks] --> B[Browser checks]
+    B --> C[Real API check]
+    C --> D[Record results and limits]
+```
 
-- `npm run typecheck`: passed.
-- `npm run lint`: passed without warnings.
-- `npm test`: all nine protocol tests passed. Covers SSE frame boundaries, split UTF-8, CRLF and final frames, citation extraction, both graph formats, and Prometheus calculations.
-- `npm run build`: passed; landing page and all eight workspace routes generated successfully, with an additional not-found page.
-- `npm audit --omit=dev`: zero production vulnerabilities. Development-only lint dependencies have five transitive high-severity advisory entries; this is the result recorded during that verification, not a current audit guarantee.
+## Latest checks: 22 October 2026
 
-## Browser checks
-
-Used the Codex in-app browser against the running Next.js development server.
-
-| Area | Verified behavior |
+| Check | Result |
 | --- | --- |
-| Landing | Desktop layout, demo entry, 375 px mobile layout without horizontal overflow |
-| Chat | Creating a fresh conversation, submitting questions, prepared streamed answers, intent/confidence, citation-to-source navigation |
-| Source | Correct file and highlighted line; uploaded ZIP source available in memory; mobile source tab opens when selecting a citation |
-| Graph | Focused neighborhood, symbol selection, callers/callees, docstring, unknown coverage shown without a fabricated score; PNG export downloaded successfully |
-| Evaluation | Sample run added, four metrics, trend chart, case expansion with answer and retrieved code, case filtering |
-| Current API | Multipart ZIP upload, `repo_path` indexing, query/provider/model payload, JSON answer and citations, current graph shape, actual Prometheus sample parsing |
-| Availability | Unregistered live evaluation disabled; unreported service health and metrics display missing-data states |
-| Workspace | Only the latest indexed current-mode repository remains ready; browser repository/chat history removal; demo/live history separation |
-| Navigation | Command search opens and filters pages/conversations; dark theme toggles and can be restored |
-| Responsive | 375 × 812 chat/source/evaluation and landing; 768 × 1024 overview; desktop 1280 × 720. Checked horizontal overflow at these sizes |
+| TypeScript and lint | Passed |
+| Protocol tests | 9 passed |
+| Production build | Passed; reported an existing Next.js security-version warning |
+| Real GitHub import | Passed through the frontend proxy and browser |
+| Import result | `itsdangerous` became ready and chat opened with it selected |
+| Local-path import | Removed from the UI; `/index` returned 404 |
 
-Current API checks used `tests/mock-api.mjs`, a deliberately labeled contract fixture reproducing the registered routes. The fixture was stopped after testing, and disposable live test history removed. The preview was restored to the explicitly labeled demo workspace. It is not a substitute for Python backend integration testing.
+The import used the real Python API, embedding model, PostgreSQL, and Qdrant. See [Testing](../docs/TESTING.md#github-import) for backend checks and counts.
 
-Screenshots: [landing](./docs/screenshots/landing.png), [workspace](./docs/screenshots/workspace.png).
+## Earlier browser checks: 7 October 2026
 
-## Verification limits
+| Area | Checked |
+| --- | --- |
+| Demo chat | New chats, sample answers, citations, source viewer |
+| Graph | Search, filters, symbol details, and export |
+| Evaluation | Sample scores, run comparison, and export |
+| Workspace | Browser history, live/demo separation, navigation, themes |
+| Layout | Desktop, tablet, and 375 px mobile screens |
+| Fake API | Request fields, response formats, and missing-feature states |
 
-- No real Python backend, database, vector store, embedding engine, or LLM was running. Actual indexing/retrieval quality and backend execution remain unverified.
-- Planned ingestion, query SSE, progress, file, evaluation, and health contracts need their backend implementations. Transport parsing is tested; those unimplemented live workflows cannot be verified end to end yet.
-- Docker configuration is included but the image was not built or deployed.
-- No formal screen-reader, cross-browser, load, or comprehensive accessibility audit was performed. Keyboard focus, semantic labels, reduced-motion behavior, and responsive layouts are implemented.
-- The graph renders at most 350 filtered symbols at once; focus, module filters, zoom, and exports support larger repositories. Source mirrors and browser-local history are intentionally not an account synchronization system.
+These earlier checks used demo data and a fake API. Local-path checks from that review describe a feature that has since been removed.
+
+Screenshots: [landing](docs/screenshots/landing.png), [workspace](docs/screenshots/workspace.png).
+
+## Not yet verified
+
+- Full live answer quality and retrieval accuracy.
+- Planned streaming, progress, evaluation, health, and source-file routes.
+- Public Docker deployment, load testing, and a full accessibility audit.
+
+The graph displays up to 350 symbols at a time. Export JSON for the complete graph.

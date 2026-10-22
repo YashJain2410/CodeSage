@@ -1,67 +1,68 @@
 # Architecture
 
-CodeSage has a browser workspace, a Python API, and a retrieval pipeline that uses both text similarity and code relationships.
+CodeSage has a Next.js frontend and a Python API. The API turns code into a graph and search index, then uses them to answer questions.
 
 ```mermaid
 flowchart TD
-    UI[Next.js workspace] --> P[Same-origin API proxy]
-    P --> API[FastAPI]
-    API --> I[Parse and index source]
-    I --> G[In-memory call graph + BM25]
-    I --> V[Qdrant vectors]
-    API --> DB[PostgreSQL repository metadata]
-    API --> Q[LangGraph query workflow]
-    G --> Q
-    V --> Q
-    Q --> L[Gemini or OpenAI]
-    API --> M[Prometheus metrics]
+    A[Browser] --> B[Next.js API proxy]
+    B --> C[Python API]
+    C --> D[Import and search services]
+    D --> E[Code graph and Qdrant]
+    D --> F[PostgreSQL records]
 ```
 
-This diagram shows intended component relationships present in source. [Current limitations](API.md#current-limitations) records the integration mismatches that prevent treating it as a verified end-to-end deployment.
+## Import code
 
-## Indexing
+GitHub import and ZIP upload use the same indexing service:
 
-The pipeline discovers `.py`, `.js`, `.ts`, and `.tsx` files, parses symbols, resolves imports, builds a NetworkX graph, and embeds source with caller/callee context. Qdrant stores vectors and source metadata; BM25 holds keyword-search documents.
+1. Read `.py`, `.js`, `.ts`, and `.tsx` files.
+2. Find functions, classes, imports, and calls.
+3. Build a graph of code connections.
+4. Turn code into number lists called embeddings. Store them in Qdrant for similarity search.
+5. Build a keyword index and save repository details in PostgreSQL.
 
-The Python and JavaScript parsers are selected by the current dispatcher. A separate TypeScript parser exists, but `.ts` and `.tsx` currently go through the JavaScript parser. TypeScript-specific syntax support therefore needs validation.
+See [GitHub import](GITHUB-IMPORT.md) for the code walkthrough.
 
-## Answering a question
+## Answer a question
 
 ```mermaid
 flowchart LR
-    A[Classify question] --> B[Keyword + vector retrieval]
-    B --> C[Expand related graph nodes]
-    C --> D[Cross-encoder rerank]
-    D --> E[Assemble context]
-    E --> F[Generate answer]
+    A[Question] --> B[Search by words and meaning]
+    B --> C[Add connected functions]
+    C --> D[Choose the most useful code]
+    D --> E[Ask the answer model]
 ```
 
-Question intents are **explain**, **bug**, **impact**, **test**, and **onboard**. Reciprocal rank fusion combines keyword and vector rankings without comparing incompatible raw scores. Graph expansion uses the intent to select useful relationships.
+The question type, such as bug or test, helps choose related code. Keyword search finds exact names; vector search finds similar meaning. The results are combined before related functions are added and ranked.
 
-LangGraph includes a confidence branch with up to two retries. The current generation node always sets confidence to `1.0` and citations to `[]`, so this branch is not yet a meaningful quality control.
+Gemini or OpenAI writes the answer. The intent fallback still uses Gemini. Confidence is currently fixed at `1.0`, and citations are empty, so they do not measure answer quality yet.
 
-## State ownership
+## Where data lives
 
-| State | Owner | Consequence |
+| Data | Location | What to know |
 | --- | --- | --- |
-| Graph, keyword index, active repository path | API process memory | Restart loses the active context; multiple workers do not share it. |
-| Code vectors | Qdrant `codesage` collection | Indexing recreates the collection and replaces previous vectors. |
-| Repository records | PostgreSQL | Metadata alone cannot restore the in-memory graph. |
-| Uploaded ZIP source | Backend workspace directories | Requires disk cleanup and a data-retention policy. |
-| Conversations and repository entries | Browser local storage | Not synchronized to an account. |
-| Source previews | Browser memory | Lost on refresh. |
+| Active graph and keyword index | API memory | Lost when the API restarts |
+| Code vectors | Qdrant | A successful new index replaces the previous collection |
+| Repository details | PostgreSQL | These records cannot restore the graph by themselves |
+| Imported source | Backend workspace folders | Kept on disk until cleaned up |
+| Chats and repository history | Browser storage | Saved only in that browser |
+| Uploaded source previews | Browser memory | Cleared on refresh |
 
-The current runtime is a personal, single-active-repository workspace. A `repository_id` in a query does not select an isolated graph. Celery task modules exist, but the registered ZIP upload indexes synchronously.
+## Current limits
+
+- One repository is active at a time. `repository_id` does not select a separate graph.
+- Multiple API workers do not share the active graph.
+- Imports wait for indexing; the current routes do not use background jobs.
+- TypeScript files currently use the JavaScript parser. TypeScript syntax needs more testing.
+- The graph shows possible code connections. It does not prove which code ran in a test.
 
 ## Design tradeoffs
 
-| Choice | Benefit | Cost or limit |
+| Choice | Why use it? | Limit |
 | --- | --- | --- |
-| Symbol-based parsing | Preserve function boundaries and source locations. | Dynamic calls cannot always be resolved statically. |
-| Keyword + vector search | Match exact names and natural-language questions. | Both indexes must describe the same source version. |
-| Graph expansion + reranking | Include related code, then prioritize relevant candidates. | More candidates and another model add latency and memory cost. |
-| Explicit workflow stages | Make retrieval and generation easy to inspect. | Quality checks need meaningful evidence and calibrated scores. |
-| Same-origin API proxy | Simplify browser integration. | Upload limits, timeouts, and build-time configuration matter. |
-| Independent demo mode | Make the product easy to review without credentials. | Sample answers cannot establish backend accuracy. |
+| Parse functions and classes | Keep useful code boundaries | Some dynamic calls cannot be found |
+| Keyword and vector search | Support names and plain-language questions | Both indexes need the same code version |
+| Graph search and ranking | Add related code and choose useful matches | Adds work and model cost |
+| Separate demo mode | Let anyone explore the UI | Sample answers do not prove real accuracy |
 
-No comparative retrieval benchmark is published yet. Use the same golden questions to compare keyword-only, vector-only, hybrid, and graph-expanded retrieval. Record answer quality, retrieved symbols, latency, model versions, and hardware. Static test links do not measure executed test coverage.
+See [API limits](API.md#current-limitations) and [test results](TESTING.md).

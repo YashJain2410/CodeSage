@@ -1,18 +1,32 @@
 # CodeSage backend
 
-FastAPI services for source ingestion, code graphs, hybrid retrieval, and generated answers.
+The Python API imports code, builds a graph and search index, and answers questions.
 
-| Directory | Responsibility |
+```mermaid
+flowchart LR
+    A[FastAPI routes] --> B[Services]
+    B --> C[Code graph and search]
+    B --> D[PostgreSQL records]
+    C --> E[Answer model]
+```
+
+## Run it
+
+Follow [Getting started](../docs/GETTING-STARTED.md). Use Python 3.12 and install `requirements.txt`. Settings read the repository-root `.env`.
+
+## Find the code
+
+| Folder | Purpose |
 | --- | --- |
-| `app/api/` | Registered HTTP handlers and request processing. |
-| `app/core/` | Parsers, graph algorithms, embeddings, retrieval, and LangGraph stages. |
-| `app/services/` | Indexing, queries, and repository orchestration. |
-| `app/db/` | Repository metadata and Alembic migrations. |
-| `app/evaluation/` | Golden questions, scoring, and regression comparison. |
-| `app/observability/` | Metrics and logging. |
-| `app/workers/` | Celery task modules; upload currently indexes synchronously. |
-| `tests/` | Checks, exploratory scripts, and a sample repository. |
+| `app/api/` | HTTP routes |
+| `app/services/` | Import, indexing, and query steps |
+| `app/core/` | Parsers, graph, search, and answer workflow |
+| `app/db/` | Repository records and migrations |
+| `app/evaluation/` | Answer-quality checks |
+| `app/observability/` | Logs and metrics |
+| `app/workers/` | Worker code; current imports wait for indexing |
+| `tests/` | Tests and sample repository |
 
-Follow [local setup](../docs/GETTING-STARTED.md); settings load the repository-root `.env`. Use Python 3.12 and `requirements.txt`. The minimal `pyproject.toml` does not declare the full runtime dependency set; `requirements1.txt` and `requirements2.txt` are earlier snapshots.
+`pyproject.toml` lists only part of the dependencies. `requirements1.txt` and `requirements2.txt` are older lists.
 
-Read [architecture](../docs/ARCHITECTURE.md), [API](../docs/API.md), and [current integration gaps](../docs/API.md#current-limitations) before running the full pipeline. Maintainer: [Yash Jain](https://github.com/YashJain2410).
+[API routes](../docs/API.md) · [Architecture](../docs/ARCHITECTURE.md) · [Tests](../docs/TESTING.md)

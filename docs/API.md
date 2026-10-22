@@ -1,33 +1,43 @@
 # API reference
 
-Local base URL: `http://127.0.0.1:8000`. The frontend proxies requests through `/api/backend`. The running [OpenAPI schema](http://localhost:8000/openapi.json) and [interactive API docs](http://localhost:8000/docs) are the authority for registered routes.
+Local API: `http://127.0.0.1:8000`. See the running [API docs](http://localhost:8000/docs) or [route list](http://localhost:8000/openapi.json).
+
+```mermaid
+flowchart LR
+    A[Browser request] --> B[Next.js proxy]
+    B --> C[FastAPI route]
+    C --> D[Import, graph, or answer]
+    D --> A
+```
 
 ## Current routes
 
-| Method | Path | Input | Output / behavior |
+| Method | Route | Input | Result |
 | --- | --- | --- | --- |
-| GET | `/` | None | Application message; not a dependency readiness check. |
-| POST | `/repositories/upload` | Multipart ZIP in `file` | Repository ID, `READY` status, node/edge counts; indexes synchronously. |
-| POST | `/repositories/github` | Multipart public repository URL in `github_url` | Clones the default branch and uses the same indexing and database flow as ZIP upload. |
-| POST | `/query` | JSON below | Answer, intent, confidence, string citations. |
-| GET | `/graph` | None | Graph nodes/edges; 404 when no graph is loaded. |
-| GET | `/metrics` | None | Prometheus text. |
-| GET | `/openapi.json` | None | API schema. |
+| GET | `/` | None | App message; does not check other services |
+| POST | `/repositories/upload` | ZIP file in form field `file` | Repository ID, `READY`, node and edge counts |
+| POST | `/repositories/github` | Public URL in form field `github_url` | Same result as ZIP upload |
+| POST | `/query` | JSON below | Answer, intent, confidence, citations |
+| GET | `/graph` | None | Current graph; 404 if none is loaded |
+| GET | `/metrics` | None | Metrics in Prometheus text format |
+| GET | `/openapi.json` | None | Registered routes and request fields |
 
-### Query request
+Imports finish indexing before returning. GitHub URLs must use HTTPS and point to a public repository. `.git` and a trailing slash are accepted. [Import details](GITHUB-IMPORT.md).
+
+## Ask a question
 
 ```json
 {
   "query": "How does authentication work?",
-  "repository_id": "repository-id-from-upload",
+  "repository_id": "id-from-import",
   "model_provider": "gemini",
-  "model_name": "provider-model-id"
+  "model_name": "model-supported-by-your-account"
 }
 ```
 
-Select a model ID supported by your provider account. `gemini` and `openai` are recognized by the current factory. The intent fallback still uses Gemini independently of the selected answer provider.
+Use `gemini` or `openai` with a model available to your account. The intent fallback still uses Gemini.
 
-### Response shape
+Example response shape:
 
 ```json
 {
@@ -38,29 +48,34 @@ Select a model ID supported by your provider account. `gemini` and `openai` are 
 }
 ```
 
-This is a schema example. The current generation node sets those confidence and citation values directly. `repository_id` is required by validation but does not isolate query state.
+Confidence and citations currently use the fixed values shown above. The API requires `repository_id`, but always searches the active repository.
 
-### Graph shape
+## Graph fields
 
-Nodes include `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, and `end_line`. Edges include `source`, `target`, `edge_type`, and `resolved`. This represents statically inferred relationships, not runtime call frequency or coverage.
+- Nodes: `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, `end_line`.
+- Edges: `source`, `target`, `edge_type`, `resolved`.
 
-## Availability and errors
+An edge is a code connection found by the parser. It is not a measure of call frequency or test coverage.
 
-FastAPI returns 422 for invalid request bodies. ZIP upload rejects non-ZIP filenames with 400 and wraps other service failures as 500. There is no application authentication or per-user authorization in the mounted routes.
+## Error codes
 
-GitHub import accepts HTTPS repository URLs, with optional `.git` and trailing slash. Invalid URLs or repositories without supported symbols return 400; private or missing repositories return 404; clone connection failures return 502; missing Git returns 503; clone timeout returns 504. The backend needs Git, PostgreSQL, Qdrant, and its embedding model. See the [GitHub import walkthrough](GITHUB-IMPORT.md) for the implementation and diagram.
-
-Local-path import and its `/index` route have been removed. File/text ingestion and evaluation/health routes exist in source but are not mounted. Query SSE, progress streaming, and server source-file retrieval are not registered. See the [frontend integration contract](../frontend-next/API-CONTRACT.md) for proposed interfaces; use `current` mode until they are implemented.
-
-Route registration establishes an interface, not successful backend execution.
+| Code | Meaning |
+| --- | --- |
+| 400 | Invalid GitHub URL, no supported GitHub code, or non-ZIP upload |
+| 404 | No graph, missing route, or missing/private GitHub repository |
+| 422 | Missing or invalid request fields |
+| 500 | Indexing, database, or another server error |
+| 502 | GitHub clone failed |
+| 503 | Git is not installed on the backend |
+| 504 | GitHub clone exceeded two minutes |
 
 ## Current limitations
 
-Reviewed against source on **8 October 2026**:
+- The API has no login or separation between users.
+- Only the latest indexed repository is active. API restarts lose its graph.
+- Local-path import and `POST /index` have been removed.
+- File/text import, evaluation, and health routes are not registered.
+- Answer streaming, import progress, and source-file retrieval are not registered.
+- TypeScript files use the JavaScript parser. Some declared settings are not used by the current components.
 
-- Generation returns empty citations and fixed confidence. Query state is global; `repository_id` does not select an isolated graph.
-- Evaluation, health, and alternate ingestion routers are unmounted. Live SSE, progress, and source-file routes are absent.
-- Evaluation needs an unprovided `baseline.json` and Ragas dependency. Its unmounted route passes the uncompiled workflow builder.
-- TypeScript/TSX files use the JavaScript parser. Several configuration settings are declared but are not wired into component defaults.
-
-The independent frontend demo remains usable. See [testing](TESTING.md) for verification evidence and [operations](OPERATIONS.md) for deployment limits.
+The frontend uses `current` mode for these routes. Future formats are in the [frontend API contract](../frontend-next/API-CONTRACT.md). See [Testing](TESTING.md) for known evaluation issues.

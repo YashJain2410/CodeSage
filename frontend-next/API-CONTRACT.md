@@ -1,123 +1,94 @@
-# API integration contract
+# Frontend API contract
 
-`src/lib/api.ts` is the single transport adapter. `/api/backend` is a same-origin rewrite, not a new backend. Runtime feature availability is read from `GET /openapi.json`. A missing capability is never silently replaced with demo data.
+Use `NEXT_PUBLIC_API_MODE=current` with this backend. The client code is in [api.ts](src/lib/api.ts); shared shapes are in [types.ts](src/lib/types.ts).
 
-## Current registered routes
-
-Verified by reading `backend/app/main.py`, its mounted route modules, schemas, services, and graph serializer.
-
-| Method | Route | Frontend request | Response |
-| --- | --- | --- | --- |
-| POST | `/repositories/upload` | multipart `file` containing ZIP | `{ repository_id, status: "READY", nodes, edges }` |
-| POST | `/repositories/github` | multipart `github_url` containing a public HTTPS GitHub repository URL | `{ repository_id, status: "READY", nodes, edges }` |
-| POST | `/query` | `{ query, repository_id, model_provider, model_name }` | `{ answer, intent, confidence, citations: string[] }` |
-| GET | `/graph` | none | `{ nodes, edges }` |
-| GET | `/metrics` | none | Prometheus exposition text |
-| GET | `/openapi.json` | none | FastAPI OpenAPI document |
-
-Current graph nodes contain `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, and `end_line`. Edges contain `source`, `target`, `edge_type`, and `resolved`. The adapter preserves test/external indicators and calculates incoming edge counts when absent.
-
-Local-path import and `POST /index` have been removed. GitHub import clones the public repository's default branch and uses the same indexing service as ZIP upload. Import requests allow up to ten minutes, matching the frontend proxy timeout; cloning itself allows two minutes. Cancellation stops the browser request; the backend may still finish indexing.
-
-The current query service ignores `repository_id` when choosing its graph; therefore only the most recently indexed live repository can be active. Earlier entries are marked for re-indexing. There is no server repository-list endpoint, so the list is labeled “Indexed in this browser”.
-
-The checked-in query route passes `call_graph=...`; `QueryService` obtains query context from application state. This frontend sends the validated request contract but does not claim to validate that entire Python execution path without running the backend services.
-
-## Routes present in source but not mounted
-
-- `backend/app/repositories/router.py`: alternate ZIP, source file, pasted text. The active GitHub route is in `backend/app/api/routes/repositories.py`.
-- `backend/app/api/routes/eval.py`: evaluation execution.
-- `backend/app/api/routes/health.py`: service health.
-- No registered source-file retrieval route or indexing-progress stream was found.
-
-Mount these routes and implement their service behavior to enable the associated live controls. Existing ZIP upload remains available through `/repositories/upload`; using planned mode changes that to `/repositories/zip`.
-
-## Planned mode
-
-Set `NEXT_PUBLIC_API_MODE=planned` at build time after implementing the following contracts. Rebuild after changing this value. URLs and payloads are explicit here so completing the backend does not require rebuilding the UI components.
-
-### Ingestion
-
-- `POST /repositories/zip`: multipart `file`.
-- `POST /repositories/github`: multipart `github_url`.
-- `POST /repositories/file`: multipart `file`.
-- `POST /repositories/text`: multipart `filename`, `content`.
-
-All return:
-
-```json
-{ "repository_id": "repo-123", "status": "ready", "nodes": 120, "edges": 210 }
+```mermaid
+flowchart LR
+    A[UI] --> B[API client]
+    B --> C[Next.js proxy]
+    C --> D[Python API]
+    D --> E[JSON or streamed reply]
 ```
 
-Background jobs instead return `{ "job_id": "job-123", "repository_id": "repo-123", "status": "queued" }`. If a repository ID is unknown until completion, the progress event must provide it. Jobs without a progress route cannot be tracked to completion.
+## Current API
 
-`GET /index/progress/{job_id}` returns SSE data objects:
+The frontend forwards `/api/backend/*` to the Python API. It reads `/openapi.json` to check which routes exist. Missing features stay unavailable.
+
+| Action | Request | Response |
+| --- | --- | --- |
+| ZIP import | `POST /repositories/upload`, form field `file` | `{ repository_id, status: "READY", nodes, edges }` |
+| GitHub import | `POST /repositories/github`, form field `github_url` | Same import result |
+| Question | `POST /query`, JSON `{ query, repository_id, model_provider, model_name }` | `{ answer, intent, confidence, citations }` |
+| Graph | `GET /graph` | `{ nodes, edges }` |
+| Metrics | `GET /metrics` | Prometheus text |
+
+See [API](../docs/API.md) for graph fields and error codes. Import waits up to ten minutes in the browser; cloning has a two-minute limit. Cancel may leave backend work running.
+
+The backend holds one active repository. An ID does not switch graphs. Browser history is not a server repository list. Each live question is independent.
+
+## Planned API
+
+These formats are supported by the UI but are **not working backend routes yet**. Implement and test them before switching to `planned` mode. Set the mode before building, then rebuild.
+
+### Import and progress
+
+| Route | Input |
+| --- | --- |
+| `POST /repositories/zip` | Form field `file` |
+| `POST /repositories/file` | Form field `file` |
+| `POST /repositories/text` | Form fields `filename`, `content` |
+
+GitHub keeps its current route. Completed imports return `{ repository_id, status: "ready", nodes, edges }`.
+
+A background import returns `{ job_id, repository_id, status: "queued" }`. It must provide `GET /index/progress/{job_id}` as a stream of JSON events:
 
 ```json
-{ "status": "indexing", "files_indexed": 23, "total_files": 40, "current_phase": "Embedding", "progress_percent": 57.5, "message": "Embedding source symbols" }
+{ "status": "indexing", "progress_percent": 50, "files_indexed": 10, "total_files": 20, "current_phase": "Embedding" }
 ```
 
-Terminal events use `status: "done"` with `repository_id`, `nodes`, and `edges`, or `status: "error"` with `message`. The frontend uses genuine reported progress; synchronous current indexing shows an indeterminate request state.
+Finish with `status: "done"`, a repository ID, nodes, and edges. Fail with `status: "error"` and `message`. If the ID was unknown at first, include it in the final event.
 
-### Queries
+### Questions and streaming
 
-`POST /query`: `{ text, repo_id, model_provider, model_name }`. Response may be JSON as above or `Content-Type: text/event-stream`:
+In planned mode, `POST /query` receives `{ text, repo_id, model_provider, model_name }`.
+
+It may return JSON or a `text/event-stream` reply. Each event starts with `data:` and ends with a blank line:
 
 ```text
 data: {"intent":"EXPLAIN","confidence":0.92}
 
-data: {"token":"The login workflow"}
+data: {"token":"The function checks the token."}
 
-data: {"token":" starts in authenticate_user."}
-
-data: {"citations":[{"filepath":"auth/service.py","line":25}]}
+data: {"citations":[{"filepath":"auth.py","line":25}]}
 
 data: [DONE]
-
 ```
 
-`text` is accepted as an alternative token field; `answer` is accepted as a complete answer field. Error events use `{ "type": "error", "message": "..." }`. The reader handles split UTF-8 and SSE frames, final unterminated frames, CRLF, cancellation, and `[DONE]`. Source citations should be repository-relative. No conversation-memory contract is invented.
+A token may use `token` or `text`; a complete reply may use `answer`. Errors use `{ "type": "error", "message": "..." }`. Citation paths must be relative to the repository. Confidence in this example is a proposed value, not a measured result.
 
-### Repository graph and source
+### Graph and source
 
-- `GET /graph/{repo_id}` returns `{ nodes, edges }`.
-- Nodes may use either the current keys or `{ id, label, file, type, line, docstring, callers_count, test_coverage }`.
-- Edges may include `call_frequency`; absent frequency defaults to 1.
-- `GET /file?path=<encoded repository-relative path>&repository_id=<id>` returns plain UTF-8 text or `{ content: string }`.
+| Route | Result |
+| --- | --- |
+| `GET /graph/{repo_id}` | Graph for that repository |
+| `GET /file?path=...&repository_id=...` | Plain source text or `{ content }` |
 
-The backend must scope and validate file paths before reading them. Uploaded source previews provide a local fallback; they are not a server filesystem reader.
+Graph nodes may use current fields or `{ id, label, file, type, line, docstring, callers_count, test_coverage }`. Edges may add `call_frequency`; the UI defaults it to 1. The server must check file paths before reading source.
 
-### Evaluations
+### Evaluation
 
-`POST /eval`: `{ golden_set_path: string }`. Supported responses:
+- `POST /eval` receives `{ golden_set_path }`.
+- It returns metrics directly, `{ metrics, test_cases, passed }`, or `{ job_id }`.
+- For a job, the UI polls `GET /eval/status/{job_id}` every two seconds for up to ten minutes.
+- Finish with `{ status: "done", result }`. A done response without `result` needs `GET /eval` to fetch the report. Errors use `{ status: "error", message }`.
+- `GET /eval` returns `{ runs, latest, thresholds }`.
 
-1. Current aggregate metrics (`faithfulness`, `topology_recall`, `intent_accuracy`, `citation_precision`, optional additional metrics, `passed`). The frontend records a browser-local completed run.
-2. `{ job_id: string }`. The frontend polls `GET /eval/status/{job_id}` every 2 seconds, for up to 10 minutes. A terminal response is `{ status: "done", result: <report> }`, or `{ status: "done" }` plus a registered `GET /eval` endpoint to fetch results. Errors use `{ status: "error", message }`.
+Each run has `id`, `timestamp`, `metrics`, and `test_cases`; `passed` is optional. Metrics include `faithfulness`, `topology_recall`, `intent_accuracy`, and `citation_precision`. A test case has `id`, `query`, `intent`, `retrieval_pass`, `answer_quality_pass`, and `latency_ms`; it may include `answer` and `retrieved_chunks`.
 
-`GET /eval` returns:
+Send actual backend thresholds and pass/fail results. Missing test details should stay missing.
 
-```json
-{
-  "runs": [{
-    "id": "run-1",
-    "timestamp": "2026-10-07T12:00:00Z",
-    "metrics": { "faithfulness": 0.92, "topology_recall": 0.86, "intent_accuracy": 0.95, "citation_precision": 0.96 },
-    "passed": true,
-    "test_cases": [{ "id": "case-1", "query": "How does authentication work?", "intent": "EXPLAIN", "retrieval_pass": true, "answer_quality_pass": true, "latency_ms": 680, "answer": "...", "retrieved_chunks": ["..."] }]
-  }],
-  "latest": { "faithfulness": 0.92, "topology_recall": 0.86, "intent_accuracy": 0.95, "citation_precision": 0.96 },
-  "thresholds": { "faithfulness": 0.8, "topology_recall": 0.7, "intent_accuracy": 0.85, "citation_precision": 0.85 }
-}
-```
+### Health
 
-Report your actual thresholds rather than adopting UI defaults implicitly. The backend's `passed` result remains separate from frontend threshold indicators. Missing case details display an aggregate-only state.
+`GET /health` should return `{ status, qdrant, redis, postgres }` using real service checks. The UI shows missing checks as “Not reported”.
 
-### Health and telemetry
-
-`GET /health`: `{ status, qdrant: boolean, redis: boolean, postgres: boolean }`. Missing checks display “Not reported”. No service health is fabricated.
-
-`GET /metrics`: Prometheus text. The frontend reads the names defined in the current `backend/app/observability/metrics.py`. Histograms produce means from `_sum / _count`; request p95 is a bucket interpolation estimate. Zero observations display no data. Grafana, LangSmith, and MLflow URLs are optional browser-local links set in Settings.
-
-## Scope
-
-The current application is a local, personal workspace without authentication. This frontend does not create account, billing, or team endpoints. Provider credentials remain in the Python environment. Authentication, multi-user authorization, conversation memory, and server-side repository history require explicit future API contracts.
+For recorded results and unfinished backend work, see [Testing](../docs/TESTING.md).
