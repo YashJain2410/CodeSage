@@ -7,7 +7,7 @@ const fixture = JSON.parse(
 );
 const paths = {
   '/repositories/upload': { post: {} },
-  '/index': { post: {} },
+  '/repositories/github': { post: {} },
   '/query': { post: {} },
   '/graph': { get: {} },
   '/metrics': { get: {} },
@@ -27,12 +27,19 @@ const server = http.createServer(async (req, res) => {
       info: { title: 'CodeSage contract test fixture', version: 'test' },
       paths,
     });
-  if (path === '/index' && req.method === 'POST') {
-    const data = JSON.parse(body.toString());
-    if (typeof data.repo_path !== 'string')
-      return respond(422, { detail: 'repo_path is required' });
-    console.log('PASS: POST /index current payload');
-    return respond(200, { status: 'success', repo_path: data.repo_path, nodes: 128, edges: 211 });
+  if (path === '/repositories/github' && req.method === 'POST') {
+    const form = await new Response(body, {
+      headers: { 'Content-Type': req.headers['content-type'] },
+    }).formData();
+    if (typeof form.get('github_url') !== 'string')
+      return respond(422, { detail: 'github_url is required' });
+    console.log('PASS: POST /repositories/github multipart URL');
+    return respond(200, {
+      repository_id: 'contract-test-github-repo',
+      status: 'READY',
+      nodes: 128,
+      edges: 211,
+    });
   }
   if (path === '/repositories/upload' && req.method === 'POST') {
     const form = await new Response(body, {

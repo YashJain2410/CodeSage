@@ -13,6 +13,6 @@ FastAPI services for source ingestion, code graphs, hybrid retrieval, and genera
 | `app/workers/` | Celery task modules; upload currently indexes synchronously. |
 | `tests/` | Checks, exploratory scripts, and a sample repository. |
 
-Follow [local setup](../docs/GETTING-STARTED.md); settings load `backend/.env`. Use Python 3.12 and `requirements.txt`. The minimal `pyproject.toml` does not declare the full runtime dependency set; `requirements1.txt` and `requirements2.txt` are earlier snapshots.
+Follow [local setup](../docs/GETTING-STARTED.md); settings load the repository-root `.env`. Use Python 3.12 and `requirements.txt`. The minimal `pyproject.toml` does not declare the full runtime dependency set; `requirements1.txt` and `requirements2.txt` are earlier snapshots.
 
 Read [architecture](../docs/ARCHITECTURE.md), [API](../docs/API.md), and [current integration gaps](../docs/API.md#current-limitations) before running the full pipeline. Maintainer: [Yash Jain](https://github.com/YashJain2410).

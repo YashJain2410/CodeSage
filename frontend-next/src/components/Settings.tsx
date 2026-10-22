@@ -9,7 +9,6 @@ import { Badge, ErrorNotice, PageHeader, Spinner } from './UI';
 import { useToast } from './Providers';
 const features = [
   ['ZIP ingestion', '/repositories/upload', 'post'],
-  ['Local indexing', '/index', 'post'],
   ['AI code chat', '/query', 'post'],
   ['Call graph', '/graph', 'get'],
   ['GitHub import', '/repositories/github', 'post'],

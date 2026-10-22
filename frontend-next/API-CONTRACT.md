@@ -9,7 +9,7 @@ Verified by reading `backend/app/main.py`, its mounted route modules, schemas, s
 | Method | Route | Frontend request | Response |
 | --- | --- | --- | --- |
 | POST | `/repositories/upload` | multipart `file` containing ZIP | `{ repository_id, status: "READY", nodes, edges }` |
-| POST | `/index` | `{ repo_path: string }` | `{ status: "success", repo_path, nodes, edges }` |
+| POST | `/repositories/github` | multipart `github_url` containing a public HTTPS GitHub repository URL | `{ repository_id, status: "READY", nodes, edges }` |
 | POST | `/query` | `{ query, repository_id, model_provider, model_name }` | `{ answer, intent, confidence, citations: string[] }` |
 | GET | `/graph` | none | `{ nodes, edges }` |
 | GET | `/metrics` | none | Prometheus exposition text |
@@ -17,13 +17,15 @@ Verified by reading `backend/app/main.py`, its mounted route modules, schemas, s
 
 Current graph nodes contain `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, and `end_line`. Edges contain `source`, `target`, `edge_type`, and `resolved`. The adapter preserves test/external indicators and calculates incoming edge counts when absent.
 
-`POST /index` is deprecated and currently has a startup signature mismatch; its response contract below does not establish successful execution. It does not return a repository ID. The client uses `local-runtime` as its explicit handle for the global runtime. The current query service ignores `repository_id` when choosing its graph; therefore only the most recently indexed live repository can be active. Earlier entries are marked for re-indexing. There is no server repository-list endpoint, so the list is labeled “Indexed in this browser”.
+Local-path import and `POST /index` have been removed. GitHub import clones the public repository's default branch and uses the same indexing service as ZIP upload. Import requests allow up to ten minutes, matching the frontend proxy timeout; cloning itself allows two minutes. Cancellation stops the browser request; the backend may still finish indexing.
+
+The current query service ignores `repository_id` when choosing its graph; therefore only the most recently indexed live repository can be active. Earlier entries are marked for re-indexing. There is no server repository-list endpoint, so the list is labeled “Indexed in this browser”.
 
 The checked-in query route passes `call_graph=...`; `QueryService` obtains query context from application state. This frontend sends the validated request contract but does not claim to validate that entire Python execution path without running the backend services.
 
 ## Routes present in source but not mounted
 
-- `backend/app/repositories/router.py`: ZIP, GitHub, source file, pasted text.
+- `backend/app/repositories/router.py`: alternate ZIP, source file, pasted text. The active GitHub route is in `backend/app/api/routes/repositories.py`.
 - `backend/app/api/routes/eval.py`: evaluation execution.
 - `backend/app/api/routes/health.py`: service health.
 - No registered source-file retrieval route or indexing-progress stream was found.
@@ -40,7 +42,6 @@ Set `NEXT_PUBLIC_API_MODE=planned` at build time after implementing the followin
 - `POST /repositories/github`: multipart `github_url`.
 - `POST /repositories/file`: multipart `file`.
 - `POST /repositories/text`: multipart `filename`, `content`.
-- `POST /index`: `{ repo_url: string }` for a backend path; GitHub uses its dedicated import route.
 
 All return:
 

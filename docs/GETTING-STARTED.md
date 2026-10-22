@@ -23,10 +23,10 @@ From the repository root:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
-cp .env.example backend/.env
+cp .env.example .env
 ```
 
-Edit `backend/.env`: set `GEMINI_API_KEY`, keep the sample local database URL, and remove the empty `REPO_PATH=` line to use the settings default. Keep credentials out of Git. Backend settings read **`backend/.env`**, regardless of the current directory.
+Edit the repository-root `.env`: set `GEMINI_API_KEY`, keep the sample local database URL, and remove the empty `REPO_PATH=` line to use the settings default. Keep credentials out of Git. Backend settings read **the repository-root `.env`**, regardless of the current directory. Git must also be installed for GitHub import.
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d postgres redis qdrant
@@ -59,9 +59,9 @@ In a second terminal, start the frontend as above and switch Settings to live mo
 | Symptom | Check |
 | --- | --- |
 | Port 3000 is busy | Grafana uses 3000 in the local Compose file. Start only the three data services or change Grafana's host port. |
-| Settings validation fails | Confirm `backend/.env` contains a key and database URL; remove blank optional path values. |
-| Graph returns 404 | No graph is loaded in the current API process. Re-index after restart using the ZIP upload path; `/index` has a documented signature mismatch. |
-| `/index` returns 500 | The deprecated route passes `repo_path` to a startup function that takes no arguments. See [API limitations](API.md#current-limitations). |
+| Settings validation fails | Confirm the repository-root `.env` contains a key and database URL; remove blank optional path values. |
+| Graph returns 404 | No graph is loaded in the current API process. Re-import a public GitHub repository or upload a ZIP after restarting. |
+| GitHub import fails | Use a public HTTPS repository URL. Git, PostgreSQL, Qdrant, and the embedding model must be available on the backend. See the [import walkthrough](GITHUB-IMPORT.md). |
 | Live controls are unavailable | They depend on mounted backend routes. Check `/openapi.json`; demo mode remains independently usable. |
 
 Stop local data services from the repository root with `docker compose -f infra/docker-compose.yml stop`. See [operations](OPERATIONS.md) before rebuilding or deleting containers.

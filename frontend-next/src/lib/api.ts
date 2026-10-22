@@ -86,13 +86,6 @@ export const api = {
     filename?: string,
     signal?: AbortSignal,
   ): Promise<IndexResponse> {
-    if (kind === 'local')
-      return (
-        await request('/index', {
-          ...json(planned ? { repo_url: value } : { repo_path: value }),
-          signal,
-        })
-      ).json();
     const form = new FormData();
     if (value instanceof File) form.append('file', value);
     else if (kind === 'github') form.append('github_url', value);
@@ -106,7 +99,15 @@ export const api = {
           ? '/repositories/zip'
           : '/repositories/upload'
         : `/repositories/${kind}`;
-    return (await request(path, { method: 'POST', body: form, signal })).json();
+    return (
+      await request(path, {
+        method: 'POST',
+        body: form,
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(600_000)])
+          : AbortSignal.timeout(600_000),
+      })
+    ).json();
   },
   async *indexProgress(jobId: string, signal: AbortSignal): AsyncGenerator<IndexProgress> {
     const response = await request(`/index/progress/${encodeURIComponent(jobId)}`, { signal });

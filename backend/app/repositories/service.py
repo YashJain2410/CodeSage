@@ -28,14 +28,6 @@ class RepositoryService:
         return self.manager.upload_single_file(file)
 
 
-    def upload_github(
-        self,
-        github_url: str,
-    ):
-
-        return self.manager.clone_github(github_url)
-
-
     def upload_text(
         self,
         filename: str,

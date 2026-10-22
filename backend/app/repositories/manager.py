@@ -36,22 +36,6 @@ class RepositoryManager:
         return workspace
     
 
-    def upload_folder(
-        self,
-        folder: Path,
-    ):
-        workspace = self.workspace.create_workspace()
-
-        source = self.workspace.source_path(workspace)
-
-        self.extractor.copy_folder(
-            folder,
-            source,
-        )
-
-        return workspace
-
-
     def upload_file(
         self,
         file_path: Path,
@@ -68,13 +52,6 @@ class RepositoryManager:
         )
 
         return workspace
-
-
-    def clone_github(
-        self,
-        github_url: str,
-    ):
-        raise NotImplementedError
 
 
     def index_repository(

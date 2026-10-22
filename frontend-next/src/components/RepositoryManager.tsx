@@ -9,7 +9,6 @@ import {
   FileCode2,
   FolderGit2,
   Github,
-  HardDrive,
   Upload,
   Trash2,
   X,
@@ -22,7 +21,6 @@ import { useToast } from './Providers';
 const sources = [
   { id: 'zip', label: 'ZIP archive', icon: Upload },
   { id: 'github', label: 'GitHub', icon: Github },
-  { id: 'local', label: 'Local path', icon: HardDrive },
   { id: 'file', label: 'Source file', icon: FileCode2 },
   { id: 'text', label: 'Paste code', icon: FileCode2 },
 ];
@@ -47,7 +45,7 @@ export default function RepositoryManager() {
     const source = new URLSearchParams(window.location.search).get('source');
     if (source) {
       setValue(source);
-      setKind(/^https?:/.test(source) ? 'github' : 'local');
+      setKind('github');
     }
     return () => controller.current?.abort();
   }, []);
@@ -56,9 +54,7 @@ export default function RepositoryManager() {
       ? planned
         ? '/repositories/zip'
         : '/repositories/upload'
-      : kind === 'local'
-        ? '/index'
-        : `/repositories/${kind}`;
+      : `/repositories/${kind}`;
   const unavailable =
     store.mode === 'live' && caps.data?.online && !supports(caps.data, endpoint, 'post');
   function choose(f?: File) {
@@ -92,7 +88,7 @@ export default function RepositoryManager() {
     }
     if (
       kind === 'github' &&
-      !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?(?:\.git)?$/.test(value.trim())
+      !/^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+\/?$/i.test(value.trim())
     ) {
       setError(new Error('Use a GitHub repository URL, such as https://github.com/owner/repo.'));
       return;
@@ -118,9 +114,7 @@ export default function RepositoryManager() {
           result.message || 'The backend did not return a completed index or a trackable job.',
         );
       const id = String(
-        result.repository_id ||
-          result.repo_id ||
-          (kind === 'local' && !planned ? 'local-runtime' : result.job_id || crypto.randomUUID()),
+        result.repository_id || result.repo_id || result.job_id || crypto.randomUUID(),
       );
       const name = (
         file?.name ||
@@ -277,7 +271,7 @@ export default function RepositoryManager() {
             ) : (
               <>
                 <label className="field-label" htmlFor="repository-source">
-                  {kind === 'github' ? 'Repository URL' : 'Path on the backend machine'}
+                  Repository URL
                 </label>
                 <input
                   id="repository-source"
@@ -285,17 +279,11 @@ export default function RepositoryManager() {
                   value={value}
                   disabled={busy}
                   onChange={(e) => setValue(e.target.value)}
-                  placeholder={
-                    kind === 'github'
-                      ? 'https://github.com/owner/repository'
-                      : '/absolute/path/to/repository'
-                  }
+                  placeholder="https://github.com/owner/repository"
                   required
                 />
                 <p className="fine-print">
-                  {kind === 'github'
-                    ? 'Import a public repository. Private repository authorization depends on your backend configuration.'
-                    : 'This is a folder accessible to the Python backend, not a folder picker on your browser.'}
+                  Import a public GitHub repository using its repository URL.
                 </p>
               </>
             )}
@@ -303,8 +291,7 @@ export default function RepositoryManager() {
               <div className="availability-note">
                 <b>This import option is ready for the planned backend.</b>
                 <p>
-                  The connected API does not expose this route yet. You can use ZIP upload or local
-                  indexing today.
+                  The connected API does not expose this route yet. You can use ZIP upload today.
                 </p>
                 <Link href="/docs">
                   View integration guide <ArrowUpRight size={13} />

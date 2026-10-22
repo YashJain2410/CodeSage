@@ -203,7 +203,7 @@ export default function Landing() {
             {[
               [
                 'Bring your code',
-                'Upload a repository archive or index a folder on your backend. GitHub import is ready for the planned API.',
+                'Import a public GitHub repository or upload a repository archive.',
               ],
               [
                 'Connect the dots',
@@ -242,8 +242,8 @@ export default function Landing() {
             >
               <input
                 ref={repoRef}
-                aria-label="Repository URL or backend folder path"
-                placeholder="GitHub URL or backend folder path"
+                aria-label="GitHub repository URL"
+                placeholder="https://github.com/owner/repository"
               />
               <button className="button primary" type="submit">
                 Get started <ArrowUpRight size={17} />

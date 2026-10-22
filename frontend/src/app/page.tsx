@@ -119,7 +119,6 @@ export default function LandingPage() {
               <div className="flex rounded-full bg-black/15 p-1 dark:bg-white/10">
                 <span className="rounded-full bg-lavender-100 px-4 py-2 text-sm font-bold text-deep shadow-lg">ZIP Upload</span>
                 <button type="button" disabled title="GitHub import is not yet supported by the backend." className="cursor-not-allowed rounded-full px-4 py-2 text-sm font-bold text-lavender-100/45">GitHub URL</button>
-                <button type="button" disabled title="Folder import is not yet supported by the backend." className="cursor-not-allowed rounded-full px-4 py-2 text-sm font-bold text-lavender-100/45">Local Folder</button>
               </div>
 
               <label className="relative flex min-w-[220px] items-center gap-3 rounded-full bg-lavender-100 px-4 py-2 text-deep shadow-sm">
@@ -216,7 +215,7 @@ export default function LandingPage() {
         <div className="relative mx-auto mt-16 grid max-w-6xl gap-8 md:grid-cols-3">
           <div className="absolute left-[16%] right-[16%] top-12 hidden border-t-2 border-dashed border-primary/30 md:block" />
           {[
-            ['Paste Repo URL', 'Drop in a GitHub repository or local path. CodeSage queues the job and keeps the indexing state visible.'],
+            ['Upload a repository', 'Choose a repository ZIP archive. CodeSage indexes the source and keeps the indexing state visible.'],
             ['AI Indexes Your Code', 'The backend chunks files, builds embeddings, extracts call relationships, and prepares the graph.'],
             ['Chat with Your Codebase', 'Ask questions, inspect cited source lines, and jump from answers into graph context.']
           ].map(([title, copy], index) => (

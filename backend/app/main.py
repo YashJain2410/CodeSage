@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 from app.core.runtime.startup import initialize_application
 from app.config import get_settings
 from app.api.routes.graph import router as graph_router
-from app.api.routes.index import router as index_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.repositories import router as repositories_router
 from pathlib import Path
@@ -56,7 +55,6 @@ app.add_middleware(
 app.include_router(query_router)
 app.include_router(metrics_router)
 app.include_router(graph_router)
-app.include_router(index_router)
 app.include_router(repositories_router)
 
 

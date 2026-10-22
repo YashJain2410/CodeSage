@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     UploadFile,
     File,
+    Form,
     Depends,
     HTTPException,
 )
@@ -15,6 +16,34 @@ router = APIRouter(
     prefix="/repositories",
     tags=["Repositories"],
 )
+
+
+@router.post("/github")
+async def import_github_repository(
+    github_url: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+
+    try:
+        return await repository_service.import_github(
+            db=db,
+            github_url=github_url,
+        )
+
+    except HTTPException:
+        raise
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
 
 
 @router.post("/upload")

@@ -30,8 +30,8 @@ export default function Page() {
             <Badge tone="purple">01 / CONNECT</Badge>
             <h2>Start with the source.</h2>
             <p>
-              Upload a ZIP archive or provide a folder path accessible to the Python backend.
-              CodeSage indexes the repository before you can ask questions.
+              Import a public GitHub repository or upload a ZIP archive. CodeSage indexes the
+              repository before you can ask questions.
             </p>
             <p>
               The current backend holds one active graph. When you index another repository,
@@ -39,8 +39,8 @@ export default function Page() {
               active.
             </p>
             <p>
-              GitHub, single-file, and pasted-code import screens are implemented. They become
-              available when the backend exposes the corresponding routes.
+              Single-file and pasted-code import screens are implemented. They become available when
+              the backend exposes the corresponding routes.
             </p>
             <Link className="text-link" href="/repositories">
               Connect repository <ArrowUpRight size={14} />

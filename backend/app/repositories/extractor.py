@@ -17,19 +17,6 @@ class RepositoryExtractor:
             archive.extractall(destination)
 
 
-    def copy_folder(
-        self,
-        source: Path,
-        destination: Path,
-    ):
-
-        shutil.copytree(
-            source,
-            destination,
-            dirs_exist_ok=True,
-        )
-
-
     def copy_file(
         self,
         source: Path,

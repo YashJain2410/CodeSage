@@ -2,10 +2,12 @@ from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.db.crud.repository import repository_crud
 from app.core.storage.file_storage import file_storage
 from app.services.index_service import index_service
+from app.repositories.github import GithubRepository
 
 
 class RepositoryService:
@@ -58,9 +60,55 @@ class RepositoryService:
             else workspace
         )
 
-        # --------------------------------------------------
-        # Index repository
-        # --------------------------------------------------
+        return await self._index_repository(
+            db=db,
+            workspace=workspace,
+            repo_root=repo_root,
+            source_type="zip",
+        )
+
+
+    async def import_github(
+        self,
+        db: AsyncSession,
+        github_url: str,
+    ):
+
+        github = GithubRepository()
+        github_url = github.validate_url(github_url)
+        workspace = file_storage.create_workspace()
+        repo_root = workspace / github_url.rsplit("/", 1)[-1]
+
+        try:
+
+            await run_in_threadpool(
+                github.clone,
+                github_url,
+                repo_root,
+            )
+
+            return await self._index_repository(
+                db=db,
+                workspace=workspace,
+                repo_root=repo_root,
+                source_type="github",
+                github_url=github_url,
+            )
+
+        except Exception:
+            await db.rollback()
+            file_storage.delete_workspace(workspace)
+            raise
+
+
+    async def _index_repository(
+        self,
+        db: AsyncSession,
+        workspace: Path,
+        repo_root: Path,
+        source_type: str,
+        github_url: str | None = None,
+    ):
 
         runtime = index_service.index_repository(
             str(repo_root)
@@ -73,8 +121,9 @@ class RepositoryService:
         repository = await repository_crud.create(
             db=db,
             name=repo_root.name,
-            source_type="zip",
+            source_type=source_type,
             workspace_path=str(workspace),
+            github_url=github_url,
         )
 
         # --------------------------------------------------
@@ -84,7 +133,7 @@ class RepositoryService:
         size_bytes = sum(
             file.stat().st_size
             for file in repo_root.rglob("*")
-            if file.is_file()
+            if file.is_file() and ".git" not in file.relative_to(repo_root).parts
         )
 
         # --------------------------------------------------

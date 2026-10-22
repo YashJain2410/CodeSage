@@ -8,11 +8,11 @@ Local base URL: `http://127.0.0.1:8000`. The frontend proxies requests through `
 | --- | --- | --- | --- |
 | GET | `/` | None | Application message; not a dependency readiness check. |
 | POST | `/repositories/upload` | Multipart ZIP in `file` | Repository ID, `READY` status, node/edge counts; indexes synchronously. |
+| POST | `/repositories/github` | Multipart public repository URL in `github_url` | Clones the default branch and uses the same indexing and database flow as ZIP upload. |
 | POST | `/query` | JSON below | Answer, intent, confidence, string citations. |
 | GET | `/graph` | None | Graph nodes/edges; 404 when no graph is loaded. |
 | GET | `/metrics` | None | Prometheus text. |
 | GET | `/openapi.json` | None | API schema. |
-| POST | `/index` | `{ "repo_path": "..." }` | Deprecated; currently fails due to startup signature mismatch. |
 
 ### Query request
 
@@ -48,7 +48,9 @@ Nodes include `id`, `label`, `filepath`, `node_type`, `is_test`, `start_line`, a
 
 FastAPI returns 422 for invalid request bodies. ZIP upload rejects non-ZIP filenames with 400 and wraps other service failures as 500. There is no application authentication or per-user authorization in the mounted routes.
 
-GitHub/file/text ingestion and evaluation/health routes exist in source but are not mounted. Query SSE, progress streaming, and server source-file retrieval are not registered. See the [frontend integration contract](../frontend-next/API-CONTRACT.md) for proposed interfaces; use `current` mode until they are implemented.
+GitHub import accepts HTTPS repository URLs, with optional `.git` and trailing slash. Invalid URLs or repositories without supported symbols return 400; private or missing repositories return 404; clone connection failures return 502; missing Git returns 503; clone timeout returns 504. The backend needs Git, PostgreSQL, Qdrant, and its embedding model. See the [GitHub import walkthrough](GITHUB-IMPORT.md) for the implementation and diagram.
+
+Local-path import and its `/index` route have been removed. File/text ingestion and evaluation/health routes exist in source but are not mounted. Query SSE, progress streaming, and server source-file retrieval are not registered. See the [frontend integration contract](../frontend-next/API-CONTRACT.md) for proposed interfaces; use `current` mode until they are implemented.
 
 Route registration establishes an interface, not successful backend execution.
 
@@ -56,7 +58,6 @@ Route registration establishes an interface, not successful backend execution.
 
 Reviewed against source on **8 October 2026**:
 
-- `/index` passes `repo_path` to a startup function that takes no arguments. ZIP upload uses a separate pipeline, whose full execution was not verified in this documentation review.
 - Generation returns empty citations and fixed confidence. Query state is global; `repository_id` does not select an isolated graph.
 - Evaluation, health, and alternate ingestion routers are unmounted. Live SSE, progress, and source-file routes are absent.
 - Evaluation needs an unprovided `baseline.json` and Ragas dependency. Its unmounted route passes the uncompiled workflow builder.

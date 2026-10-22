@@ -28,6 +28,19 @@ python -m pytest tests/unit/test/test_queries.py
 
 The broader suite is available with `python -m pytest tests`. Some files are exploratory scripts; others use older function names or require model downloads, credentials, Qdrant, or Redis at import time. Do not describe this suite as a passing release gate without reviewing its actual result.
 
+## GitHub import verification
+
+On 22 October 2026, the 34 focused GitHub helper and import tests passed, along with frontend type checking, lint, the nine protocol tests, and a production build. The build reported an existing Next.js security-version warning; upgrading dependencies is separate from the import change.
+
+```bash
+cd backend
+../.venv/bin/python -m pytest tests/unit/test_github.py tests/integration/test_github_import.py -q
+```
+
+The live import of `pallets/itsdangerous` through the frontend proxy returned `READY` with 256 nodes and 342 edges. Its database record and 135 Qdrant vectors were verified. Invalid-host, missing-repository, and unsupported-symbol imports returned 400, 404, and 400 respectively, while preserving the active graph and vectors. The browser import accepted a URL ending in `.git/`, saved the repository in browser history, and opened chat with that repository active. Local-path input was absent and the removed `/index` route returned 404.
+
+These checks used GitHub, the real embedding model, PostgreSQL, and Qdrant. PostgreSQL and Qdrant were started from the existing Compose file, and the existing migrations were applied to the empty local database. The backend environment file was preserved. See the [implementation walkthrough](GITHUB-IMPORT.md) for each code change and the architecture diagram. This does not certify arbitrary repository sizes, provider availability, or the broader backend suite.
+
 ## Evaluation
 
 The [golden set](../backend/app/evaluation/golden_set.json) contains questions with expected intent and symbols. The harness combines retrieval-oriented metrics with RAG answer scoring and MLflow reports.

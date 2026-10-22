@@ -98,6 +98,12 @@ class IndexingPipeline:
 
         units = self.parse_repository(repo_path)
 
+        if not units:
+            raise ValueError(
+                "No supported functions or classes were found. "
+                "Import a repository containing Python, JavaScript, or TypeScript source code."
+            )
+
         print(f"Parsed {len(units)} units")
 
         resolver = ImportResolver(repo_path)
@@ -137,9 +143,9 @@ class IndexingPipeline:
 
     def index_repository(self, repo_path):
 
-        self.vector_store.recreate_collection()
-
         units, graph, embeddings, documents = self.build_index(repo_path)
+
+        self.vector_store.recreate_collection()
 
         print("Uploading vectors...")
 

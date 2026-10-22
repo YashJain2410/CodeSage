@@ -29,13 +29,6 @@ def upload_file(
     return service.upload_file(file)
 
 
-@router.post("/github")
-def upload_github(
-    github_url: str = Form(...)
-):
-    return service.upload_github(github_url)
-
-
 @router.post("/text")
 def upload_text(
     filename: str = Form(...),
