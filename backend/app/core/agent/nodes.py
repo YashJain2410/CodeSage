@@ -87,16 +87,15 @@ def expand_graph_node(
         print("First node:", next(iter(graph.nodes)))
         print("Retrieved id:", func_id)
 
+        expanded.append(func_id)
         expanded.extend(
-            expander.expand(
+            sorted(expander.expand(
                 func_id,
                 state["intent"]
-            )
+            ))
         )
 
-    state["expanded_results"] = list(
-        set(expanded)
-    )
+    state["expanded_results"] = list(dict.fromkeys(expanded))
 
     return state
 

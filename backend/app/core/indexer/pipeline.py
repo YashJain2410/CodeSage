@@ -1,3 +1,4 @@
+from app.config import get_settings
 from app.core.parser import get_parser
 from app.core.parser.import_resolver import ImportResolver
 
@@ -14,10 +15,11 @@ from app.core.indexer.experiment_tracker import ( ExperimentTracker )
 
 class IndexingPipeline:
 
-    def __init__(self):
+    def __init__(self, *, settings=None):
 
-        self.embedder = CodeEmbedder()
-        self.vector_store = QdrantCodeStore()
+        settings = settings or get_settings()
+        self.embedder = CodeEmbedder(settings=settings)
+        self.vector_store = QdrantCodeStore(settings=settings)
         self.graph_builder = CallGraphBuilder()
         self.tracker = ExperimentTracker()
 
@@ -145,7 +147,7 @@ class IndexingPipeline:
 
         units, graph, embeddings, documents = self.build_index(repo_path)
 
-        self.vector_store.recreate_collection()
+        self.vector_store.recreate_collection(vector_size=embeddings.shape[1])
 
         print("Uploading vectors...")
 
@@ -164,7 +166,7 @@ class IndexingPipeline:
 
         self.tracker.track_indexing_run(
             stats,
-            "microsoft/unixcoder-base",
+            self.embedder.model_name,
         )
 
         return {

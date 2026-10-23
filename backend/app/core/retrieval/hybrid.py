@@ -1,3 +1,4 @@
+from app.config import get_settings
 from collections import defaultdict
 
 from rank_bm25 import BM25Okapi
@@ -11,10 +12,11 @@ import time
 
 class HybridRetriever:
 
-    def __init__(self):
+    def __init__(self, *, settings=None):
 
-        self.embedder = CodeEmbedder()
-        self.vector_store = QdrantCodeStore()
+        settings = settings or get_settings()
+        self.embedder = CodeEmbedder(settings=settings)
+        self.vector_store = QdrantCodeStore(settings=settings)
         self.bm25 = None
         self.documents = []
 

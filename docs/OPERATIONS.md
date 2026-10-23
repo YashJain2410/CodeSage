@@ -1,6 +1,6 @@
 # Operations
 
-The [frontend and demo](https://code-sage-gray.vercel.app/) are live on Vercel. Live import and chat are unavailable: the Render backend runs out of memory while loading its embedding model on the free 512 MB plan.
+The [frontend and demo](https://code-sage-gray.vercel.app/) are live on Vercel. The previous backend exhausted its free 512 MB plan while loading local embedding weights. The backend now defaults to cloud Gemini embeddings and reranking, with no local neural-model loading. Redeploy and reimport repositories before checking live import/chat; deployed memory and provider access still need verification.
 
 ```mermaid
 flowchart TD
@@ -26,7 +26,7 @@ Set `CODESAGE_BACKEND_URL` and `NEXT_PUBLIC_API_MODE=current` before building. R
 - Vercel uses `frontend-next` as the root directory and the default Next.js build.
 - `CODESAGE_BACKEND_URL` points to `https://codesage-x5l2.onrender.com`.
 - `NEXT_PUBLIC_API_URL=/api/backend` sends browser requests through the frontend proxy.
-- Render stays on the free plan. The current local models need more memory; a successful frontend build does not mean live indexing works.
+- Render stays on the free plan. Cloud retrieval models are the default. Opting into local models requires additional packages and enough backend memory; a successful frontend build does not verify live indexing.
 
 ## Docker builds
 

@@ -1,72 +1,56 @@
-from sentence_transformers import CrossEncoder
-from app.observability.metrics import RERANK_LATENCY
+from functools import cached_property
 import time
+
+from app.config import get_settings
+from app.core.models.common import validate_ranking
+from app.core.models.ranking import create_ranking_backend
+from app.observability.metrics import RERANK_LATENCY
 
 
 class CrossEncoderReranker:
+    """Compatibility facade for configurable local or remote relevance scoring."""
 
-    def __init__(
-            self,
-            model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    ):
-        self.model = CrossEncoder(model_name)
+    def __init__(self, model_name=None, *, settings=None, backend=None):
+        self.settings = (settings or get_settings()).model_copy(deep=True)
+        if model_name is not None:
+            self.settings.rerank_model = model_name
+        self._backend = backend
 
+    @cached_property
+    def backend(self):
+        return self._backend or create_ranking_backend(self.settings)
 
     def build_candidate_text(self, node_data):
+        source = node_data.get("source") or ""
+        limit = self.settings.rerank_document_max_chars
+        if limit is not None:
+            source = source[:limit]
+        return (f"Function:\n{node_data.get('qualified_name')}\n\n"
+                f"Docstring:\n{node_data.get('docstring')}\n\nSource:\n{source}")
 
-        return f"""
-Function:
-{node_data.get('qualified_name')}
-
-Docstring:
-{node_data.get('docstring')}
-
-Source:
-{node_data.get('source')}
-"""
-    
-
-    def rerank(self, query, candidates, graph, top_k = 20):
-
-        pairs = []
-        valid_nodes = []
-
-        for func_id in candidates:
-
-            if func_id not in graph.nodes:
-                continue
-
-            node_data = graph.nodes[func_id]
-
-            candidate_text = (
-                self.build_candidate_text(node_data)
-            )
-
-            pairs.append(
-                (
-                    query,
-                    candidate_text
-                )
-            )
-
-            valid_nodes.append(func_id)
-
-        start = time.time()
-
-        scores = self.model.predict(pairs)
-
-        latency_ms = (
-            time.time() - start
-        ) * 1000
-
-        ranked = sorted(
-            zip(valid_nodes, scores),
-            key = lambda x: x[1],
-            reverse = True
-        )
-
-        RERANK_LATENCY.observe(
-            latency_ms
-        )
-
-        return ranked[:top_k]
+    def rerank(self, query, candidates, graph, top_k=None):
+        limit = self.settings.rerank_top_k if top_k is None else top_k
+        if limit < 0:
+            raise ValueError("top_k must not be negative.")
+        valid_nodes = list(dict.fromkeys(node for node in candidates if node in graph.nodes))
+        valid_nodes = valid_nodes[:self.settings.rerank_max_candidates]
+        if not valid_nodes or limit == 0:
+            return []
+        documents = [self.build_candidate_text(graph.nodes[node]) for node in valid_nodes]
+        size = self.settings.rerank_batch_size
+        ranked = []
+        start = time.perf_counter()
+        try:
+            # Disabled scoring must preserve global input order across batch boundaries.
+            if self.settings.rerank_provider == "none":
+                return [(node, float(len(valid_nodes) - i)) for i, node in enumerate(valid_nodes)][:limit]
+            for offset in range(0, len(documents), size):
+                batch = documents[offset:offset + size]
+                rows = self.backend.rank(query, batch)
+                checked = validate_ranking([
+                    {"index": index, "relevance_score": score} for index, score in rows
+                ], len(batch))
+                ranked.extend((valid_nodes[offset + index], score) for index, score in checked)
+            return sorted(ranked, key=lambda item: item[1], reverse=True)[:limit]
+        finally:
+            RERANK_LATENCY.observe((time.perf_counter() - start) * 1000)

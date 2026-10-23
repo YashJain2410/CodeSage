@@ -10,12 +10,14 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-install CPU-only version of PyTorch to reduce image size and RAM usage during build
-RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-
-COPY requirements.txt .
-
+# Cloud inference is the default. Opt in to local models at image build time.
+ARG INSTALL_LOCAL_MODELS=false
+COPY requirements.txt requirements-local-models.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+RUN if [ "$INSTALL_LOCAL_MODELS" = "true" ]; then \
+      pip install --no-cache-dir -r requirements-local-models.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu; \
+    fi
 
 COPY . .
 

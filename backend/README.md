@@ -12,7 +12,7 @@ flowchart LR
 
 ## Run it
 
-Follow [Getting started](../docs/GETTING-STARTED.md). Use Python 3.12 and install `requirements.txt`. Settings read the repository-root `.env`.
+Follow [Getting started](../docs/GETTING-STARTED.md). Use Python 3.12 and install `requirements.txt`. Settings read the repository-root `.env`. Embeddings and reranking default to Gemini APIs. See [Retrieval models](../docs/RETRIEVAL-MODELS.md) for local checkpoints, hosted endpoints, and optional local dependencies.
 
 ## Find the code
 

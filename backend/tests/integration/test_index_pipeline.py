@@ -1,6 +1,7 @@
 from pathlib import Path
 import pytest
 
+from app.config import get_settings
 from app.core.indexer.pipeline import IndexingPipeline
 from app.core.indexer.qdrant_store import QdrantCodeStore
 
@@ -39,11 +40,15 @@ def test_login():
     )
 
     # create pipeline
-    pipeline = IndexingPipeline()
+    settings = get_settings().model_copy(update={
+        "embed_provider": "unixcoder", "embed_model": "microsoft/unixcoder-base",
+        "embed_dimensions": None,
+    })
+    pipeline = IndexingPipeline(settings=settings)
 
     # use in-memory qdrant
     pipeline.vector_store = QdrantCodeStore(
-        url=":memory:"
+        url=":memory:", settings=settings
     )
 
     runtime = pipeline.index_repository(

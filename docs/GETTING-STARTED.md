@@ -25,7 +25,7 @@ Open [localhost:3000](http://localhost:3000). **Explore the demo** needs no back
 
 ## 2. Set up the backend
 
-You need Python 3.12, Git, Docker Compose, and a Gemini API key. Models download on first use.
+You need Python 3.12, Git, Docker Compose, and a Gemini API key. Embeddings and reranking default to the Gemini API; local model downloads occur only if you select a local provider. See [Retrieval models](RETRIEVAL-MODELS.md) for configuration.
 
 In another terminal, run from the repository root:
 

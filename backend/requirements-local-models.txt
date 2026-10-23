@@ -1,0 +1,5 @@
+# Optional dependencies for local embedding and reranking providers.
+-r requirements.txt
+sentence-transformers==5.5.1
+torch==2.8.0
+transformers==4.56.2

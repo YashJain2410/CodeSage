@@ -62,4 +62,4 @@ In frontend Settings, choose **Backend default** to follow the environment. To o
 
 Tests use mock HTTP responses with the real Google and OpenAI clients, plus the Anthropic HTTP adapter. They check selection, request format, and failure handling. They do not verify credentials or access to every hosted model.
 
-These settings change answer generation and question classification. The local embedding model and reranker still use backend RAM.
+These settings change answer generation and question classification. Embeddings and reranking have independent provider selections and default to cloud Gemini inference. See [Retrieval models](RETRIEVAL-MODELS.md) for local checkpoints, hosted APIs, and migration instructions.
