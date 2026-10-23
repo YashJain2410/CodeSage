@@ -35,7 +35,9 @@ Imports finish indexing before returning. GitHub URLs must use HTTPS and point t
 }
 ```
 
-Use `gemini` or `openai` with a model available to your account. The intent fallback still uses Gemini.
+Both model fields are optional. Omit them to use the backend environment defaults. A provider override uses that provider’s configured model unless `model_name` is supplied. [Provider settings](MODEL-PROVIDERS.md).
+
+Classification and answers use the same selected provider and model. Requests fail with a clear error instead of switching providers or guessing an intent after a model error.
 
 Example response shape:
 
@@ -44,7 +46,9 @@ Example response shape:
   "answer": "Generated explanation",
   "intent": "EXPLAIN",
   "confidence": 1.0,
-  "citations": []
+  "citations": [],
+  "model_provider": "gemini",
+  "model_name": "gemini-3.8-flash"
 }
 ```
 
@@ -61,11 +65,11 @@ An edge is a code connection found by the parser. It is not a measure of call fr
 
 | Code | Meaning |
 | --- | --- |
-| 400 | Invalid GitHub URL, no supported GitHub code, or non-ZIP upload |
+| 400 | Invalid import input or missing/unsupported model configuration |
 | 404 | No graph, missing route, or missing/private GitHub repository |
 | 422 | Missing or invalid request fields |
 | 500 | Indexing, database, or another server error |
-| 502 | GitHub clone failed |
+| 502 | GitHub clone failed, or the selected model failed/returned no usable text |
 | 503 | Git is not installed on the backend |
 | 504 | GitHub clone exceeded two minutes |
 

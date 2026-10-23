@@ -35,7 +35,7 @@ flowchart LR
 
 The question type, such as bug or test, helps choose related code. Keyword search finds exact names; vector search finds similar meaning. The results are combined before related functions are added and ranked.
 
-Gemini or OpenAI writes the answer. The intent fallback still uses Gemini. Confidence is currently fixed at `1.0`, and citations are empty, so they do not measure answer quality yet.
+The configured provider and model handle both question classification and answer generation. Failed model calls return errors without switching providers. See [AI providers](MODEL-PROVIDERS.md). Confidence is currently fixed at `1.0`, and citations are empty, so they do not measure answer quality yet.
 
 ## Where data lives
 

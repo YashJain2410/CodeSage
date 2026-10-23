@@ -5,7 +5,8 @@ from app.core.agent.nodes import generate_answer_node
 settings = get_settings()
 
 llm = GeminiLLM(
-    api_key=settings.gemini_api_key
+    api_key=settings.gemini_api_key,
+    model_name=settings.gemini_model,
 )
 
 state = {
@@ -19,7 +20,7 @@ This function validates payment
 and charges the customer.
 """,
     "model_provider": "gemini",
-    "model_name": "gemini-2.5-flash",
+    "model_name": settings.gemini_model,
 
     "answer": None,
     "citations": [],

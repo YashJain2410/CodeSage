@@ -66,8 +66,8 @@ export const useCodeSageStore = create<Store>()(
       selectedCitation: null,
       pendingPrompt: null,
       progress: null,
-      provider: 'gemini',
-      model: 'gemini-3.5-flash',
+      provider: '',
+      model: '',
       hydrate: () => set({ hydrated: true }),
       setMode: (mode) =>
         set((s) => ({
@@ -241,6 +241,15 @@ export const useCodeSageStore = create<Store>()(
     }),
     {
       name: 'codesage-next-workspace-v1',
+      version: 1,
+      migrate: (saved) => {
+        const state = saved as Pick<Store, 'mode' | 'live' | 'demo' | 'provider' | 'model'>;
+        // Old versions persisted a fixed default instead of using the backend setting.
+        if (state.provider === 'gemini' && state.model === 'gemini-3.5-flash') {
+          return { ...state, provider: '', model: '' };
+        }
+        return state;
+      },
       partialize: (s) => ({
         mode: s.mode,
         live: s.live,

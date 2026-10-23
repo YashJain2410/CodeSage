@@ -28,6 +28,10 @@ export default function Settings() {
   const toast = useToast(),
     caps = useQuery({ queryKey: ['capabilities'], queryFn: api.capabilities });
   useEffect(() => {
+    setProvider(store.provider);
+    setModel(store.model);
+  }, [store.provider, store.model]);
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('codesage-monitoring-links');
       if (saved) setLinks(JSON.parse(saved));
@@ -116,8 +120,7 @@ export default function Settings() {
           className="surface"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!model.trim()) return;
-            store.setModel(provider, model.trim());
+            store.setModel(provider, provider ? model.trim() : '');
             toast('Model preference saved.');
           }}
         >
@@ -130,18 +133,18 @@ export default function Settings() {
             value={provider}
             onChange={(e) => {
               setProvider(e.target.value);
-              setModel(
-                e.target.value === 'gemini'
-                  ? 'gemini-3.5-flash'
-                  : e.target.value === 'openai'
-                    ? 'gpt-4.1'
-                    : '',
-              );
+              setModel('');
             }}
           >
+            <option value="">Backend default</option>
             <option value="gemini">Google Gemini</option>
             <option value="openai">OpenAI</option>
-            {planned && <option value="anthropic">Anthropic</option>}
+            <option value="anthropic">Anthropic</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="groq">Groq</option>
+            <option value="mistral">Mistral</option>
+            <option value="xai">xAI</option>
+            <option value="openrouter">OpenRouter</option>
           </select>
           <label className="field-label" htmlFor="model-name">
             Model identifier
@@ -151,11 +154,17 @@ export default function Settings() {
             className="input mono"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            required
+            disabled={!provider}
+            placeholder={
+              provider
+                ? 'Use backend setting, or enter a model ID'
+                : 'Use the model configured on the backend'
+            }
           />
           <p className="fine-print">
-            The model identifier must be supported by your provider. Provider API keys stay in the
-            Python backend environment.
+            Leave the model blank to use this provider’s backend setting. Answers and question
+            classification use the same selection. Errors never switch providers or models. API keys
+            stay on the backend.
           </p>
           <button className="button primary small" type="submit">
             <Check size={14} />

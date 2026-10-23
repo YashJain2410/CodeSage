@@ -57,7 +57,7 @@ Start them again using [Getting started](GETTING-STARTED.md). After an API resta
 ## Keep data and keys safe
 
 - Keep provider keys in backend settings, outside Git and `NEXT_PUBLIC_*` variables.
-- Relevant source is sent to the answer provider. The intent fallback may send questions to Gemini.
+- Relevant source is sent to the answer provider. Question classification uses the same selected provider.
 - Source folders and Qdrant payloads keep copies of imported code.
 - Back up PostgreSQL, Qdrant, source folders, and the matching app version together. Test that they can be restored.
 

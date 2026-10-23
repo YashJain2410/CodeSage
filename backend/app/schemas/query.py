@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
 
 class QueryRequest(BaseModel):
     query: str
-    model_provider: str = "gemini"
-    model_name: str = "gemini-3.5-flash"
     repository_id: str
-    query: str
+    model_provider: str | None = Field(default=None, min_length=1)
+    model_name: str | None = Field(default=None, min_length=1)
 
 
 class QueryResponse(BaseModel):
@@ -13,3 +13,5 @@ class QueryResponse(BaseModel):
     intent: str
     confidence: float
     citations: list[str]
+    model_provider: str
+    model_name: str

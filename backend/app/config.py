@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Optional
+from pydantic import Field
+from typing import Literal, Optional
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -17,8 +18,28 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # API Keys
-    gemini_api_key: str
+    gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    mistral_api_key: Optional[str] = None
+    xai_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+
+    # Answer generation and intent classification use the same provider and model.
+    llm_provider: str = "gemini"
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_thinking_level: Literal["low", "medium", "high"] = "low"
+    openai_model: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    deepseek_model: Optional[str] = None
+    groq_model: Optional[str] = None
+    mistral_model: Optional[str] = None
+    xai_model: Optional[str] = None
+    openrouter_model: Optional[str] = None
+    llm_timeout_seconds: float = Field(default=60, gt=0)
+    llm_max_output_tokens: int = Field(default=4096, gt=0)
 
     # Tracing
     langsmith_tracing: bool = False

@@ -2,6 +2,7 @@ import uuid
 import networkx as nx
 
 from app.core.agent.graph import graph
+from app.core.llm.factory import resolve_model
 from app.core.agent.state import AgentState
 from app.observability.langsmith import CodeSageCallbackHandler, query_tracing
 from app.observability.metrics import QUERY_COUNT
@@ -61,10 +62,10 @@ class QueryService:
     def answer(
             self,
             query: str,
-            provider: str,
-            model: str,
+            provider: str | None = None,
+            model: str | None = None,
     ):
-        
+        provider, model = resolve_model(provider, model)
         state = self._build_initial_state(
             query,
             provider,

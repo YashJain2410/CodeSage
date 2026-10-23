@@ -38,7 +38,17 @@ The first command runs CI's automated tests without model downloads, private key
 
 The import API tests replace external calls with test doubles. Old scripts that make live Gemini, Celery, embedding, or Qdrant calls during import are excluded from pytest collection; run those scripts directly when needed. Sample repository files are fixtures, not application tests.
 
-On **23 October 2026**, all 54 automated backend tests passed, including the real model integration. CI's 53 tests also passed locally without loading `.env`. Monitoring tests check successful requests, errors, route labels, and LangGraph parent and child trace export. A real API request was collected by Prometheus and queried through Grafana. Hosted LangSmith still requires a configured API key.
+On **23 October 2026**, the backend suite excluding the real embedding test passed **93 tests**. The separate embedding integration passed earlier during monitoring checks. Monitoring tests cover requests, errors, route labels, and LangGraph parent and child trace export. A real API request was collected by Prometheus and queried through Grafana. Hosted LangSmith still requires a configured API key.
+
+## Model selection
+
+- Provider tests use mock HTTP responses with the real Google and OpenAI SDKs, plus the Anthropic HTTP adapter.
+- Tests check environment defaults, explicit choices, each provider's credentials and endpoint, rate limits, empty replies, and fallback prevention.
+- API tests check 400 configuration errors, 502 model errors, and the selected model in successful responses.
+- Browser checks confirmed that model preferences survive a reload and Backend default uses environment settings.
+- Google's model metadata API recognized `gemini-3.8-flash` with the configured key. No live generation calls were made for this change.
+
+See [AI providers](MODEL-PROVIDERS.md) for configuration and supported providers.
 
 ## GitHub import
 

@@ -12,6 +12,7 @@ flowchart LR
 | Guide | Use it to |
 | --- | --- |
 | [Getting started](GETTING-STARTED.md) | Run the demo or local backend |
+| [AI providers](MODEL-PROVIDERS.md) | Choose a provider and model without automatic fallback |
 | [Architecture](ARCHITECTURE.md) | Understand the main parts and stored data |
 | [GitHub import](GITHUB-IMPORT.md) | Follow the import code step by step |
 | [API](API.md) | Find working routes and request examples |

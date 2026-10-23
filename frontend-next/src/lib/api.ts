@@ -121,9 +121,13 @@ export const api = {
     model: string,
     signal: AbortSignal,
   ): AsyncGenerator<QueryEvent> {
+    const selection = {
+      ...(provider ? { model_provider: provider } : {}),
+      ...(model ? { model_name: model } : {}),
+    };
     const body = planned
-      ? { text: query, repo_id: repositoryId, model_provider: provider, model_name: model }
-      : { query, repository_id: repositoryId, model_provider: provider, model_name: model };
+      ? { text: query, repo_id: repositoryId, ...selection }
+      : { query, repository_id: repositoryId, ...selection };
     const response = await request('/query', { ...json(body), signal });
     if ((response.headers.get('content-type') || '').includes('text/event-stream')) {
       if (!response.body) throw new ApiError('The backend returned an empty answer stream.');

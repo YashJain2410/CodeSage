@@ -61,8 +61,8 @@ const server = http.createServer(async (req, res) => {
     if (
       typeof data.query !== 'string' ||
       !data.repository_id ||
-      !data.model_provider ||
-      !data.model_name
+      (data.model_provider !== undefined && !data.model_provider) ||
+      (data.model_name !== undefined && !data.model_name)
     )
       return respond(422, { detail: 'Expected current QueryRequest fields' });
     console.log('PASS: POST /query current payload and provider fields');

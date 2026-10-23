@@ -5,6 +5,7 @@ from typing import Literal
 
 from app.observability.metrics import INTENT_CLASSIFICATION_METHOD, INTENT_COUNT
 from app.core.llm.factory import get_llm
+from app.core.llm.errors import ModelRequestError
 from app.core.retrieval.prompts import INTENT_CLASSIFIER_PROMPT
 
 class QueryIntent(str, Enum):
@@ -107,12 +108,14 @@ class QueryIntentClassifier:
         )
     
 
-    def classify_llm(self, query: str):
+    def classify_llm(
+        self,
+        query: str,
+        provider: str | None = None,
+        model_name: str | None = None,
+    ):
 
-        llm = get_llm(
-            provider="gemini",
-            model_name="gemini-3.5-flash",
-        )
+        llm = get_llm(provider, model_name)
 
         response = llm.generate(
             system_prompt="You are an intent classifier",
@@ -126,8 +129,10 @@ class QueryIntentClassifier:
         try:
             intent = QueryIntent(label)
         
-        except KeyError:
-            intent = QueryIntent.EXPLAIN
+        except ValueError as exc:
+            raise ModelRequestError(
+                "The selected model returned an invalid intent label. No fallback was used."
+            ) from exc
 
         return IntentResult(
             intent = intent,
@@ -136,7 +141,12 @@ class QueryIntentClassifier:
         )
     
 
-    def classify(self, query: str) -> IntentResult:
+    def classify(
+        self,
+        query: str,
+        provider: str | None = None,
+        model_name: str | None = None,
+    ) -> IntentResult:
 
         rule_result = self.classify_rules(query)
 
@@ -152,16 +162,7 @@ class QueryIntentClassifier:
 
             return rule_result
 
-        try:
-            llm_result = self.classify_llm(query)
-
-        except Exception:
-
-            llm_result = IntentResult(
-                intent=QueryIntent.EXPLAIN,
-                confidence=0.3,
-                method="rules",
-            )
+        llm_result = self.classify_llm(query, provider, model_name)
 
         INTENT_CLASSIFICATION_METHOD.labels(
             method="llm"

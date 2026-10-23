@@ -31,7 +31,9 @@ def classify_intent_node(
 ) -> AgentState:
 
     result = classifier.classify(
-        state["query"]
+        state["query"],
+        provider=state.get("model_provider"),
+        model_name=state.get("model_name"),
     )
 
     state["intent"] = result.intent

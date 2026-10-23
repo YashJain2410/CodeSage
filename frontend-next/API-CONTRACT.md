@@ -18,7 +18,7 @@ The frontend forwards `/api/backend/*` to the Python API. It reads `/openapi.jso
 | --- | --- | --- |
 | ZIP import | `POST /repositories/upload`, form field `file` | `{ repository_id, status: "READY", nodes, edges }` |
 | GitHub import | `POST /repositories/github`, form field `github_url` | Same import result |
-| Question | `POST /query`, JSON `{ query, repository_id, model_provider, model_name }` | `{ answer, intent, confidence, citations }` |
+| Question | `POST /query`, JSON `{ query, repository_id }` plus optional `model_provider`, `model_name` | `{ answer, intent, confidence, citations, model_provider, model_name }` |
 | Graph | `GET /graph` | `{ nodes, edges }` |
 | Metrics | `GET /metrics` | Prometheus text |
 
@@ -92,3 +92,5 @@ Send actual backend thresholds and pass/fail results. Missing test details shoul
 `GET /health` should return `{ status, qdrant, redis, postgres }` using real service checks. The UI shows missing checks as “Not reported”.
 
 For recorded results and unfinished backend work, see [Testing](../docs/TESTING.md).
+
+Model selection follows the [backend provider settings](../docs/MODEL-PROVIDERS.md). Backend default omits both model fields.

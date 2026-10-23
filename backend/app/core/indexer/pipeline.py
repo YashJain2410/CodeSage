@@ -165,8 +165,6 @@ class IndexingPipeline:
         self.tracker.track_indexing_run(
             stats,
             "microsoft/unixcoder-base",
-            model_provider="gemini",
-            model_name="gemini-3.5-flash",
         )
 
         return {

@@ -6,6 +6,7 @@ from app.evaluation.metrics import ( intent_accuracy, topology_recall, citation_
 from app.evaluation.ragas_adapter import build_ragas_dataset
 from app.evaluation.ragas_evaluator import RagasEvaluator
 from app.core.indexer.experiment_tracker import ExperimentTracker
+from app.core.llm.factory import resolve_model
 from app.evaluation.regression_gate import RegressionGate
 
 
@@ -28,11 +29,12 @@ class EvalHarness:
 
         start = time.time()
 
+        provider, model = resolve_model()
         result = self.graph.invoke(
             {
                 "query": case["query"],
-                "model_provider": "gemini",
-                "model_name": "gemini-3.5-flash",
+                "model_provider": provider,
+                "model_name": model,
             }
         )
 
@@ -165,10 +167,11 @@ class EvalHarness:
             gate_result["passed"]
         )
 
+        provider, model = resolve_model()
         self.tracker.log_evaluation_report(
             report=report,
-            model_provider="gemini",
-            model_name="gemini-3.5-flash",
+            model_provider=provider,
+            model_name=model,
         )
 
         return report

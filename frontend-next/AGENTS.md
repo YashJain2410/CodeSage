@@ -1,3 +1,11 @@
+# Frontend coding guide
+
+```mermaid
+flowchart LR
+    A[Read the Next.js guide] --> B[Make a focused change]
+    B --> C[Run the relevant checks]
+```
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know
