@@ -1,6 +1,15 @@
 # Operations
 
-The [frontend and demo](https://code-sage-gray.vercel.app/) are live on Vercel. The previous backend exhausted its free 512 MB plan while loading local embedding weights. The backend now defaults to cloud Gemini embeddings and reranking, with no local neural-model loading. Redeploy and reimport repositories before checking live import/chat; deployed memory and provider access still need verification.
+The [frontend and demo](https://code-sage-gray.vercel.app/) are live on Vercel. The [Render backend](https://codesage-x5l2.onrender.com/) successfully deployed the cloud-model configuration on 23 October 2026. The previous startup memory failure is resolved for the tested deployment; full indexing and chat still depend on working database services.
+
+## Deployment verification — 23 October 2026
+
+- Commit `5af6f43` deployed successfully on Render's existing free instance. Deployment `dep-dbdos2om7kps73b6gmp0` applied the corrected environment settings and completed successfully.
+- Render's stale `EMBED_MODEL=microsoft/unixcoder-base` override was replaced with `gemini-embedding-2`. `EMBED_PROVIDER=gemini`, `RERANK_PROVIDER=gemini`, and `RERANK_MODEL=gemini-3.8-flash` are explicitly configured. Existing credentials were preserved.
+- The public root endpoint returned HTTP 200. A synthetic two-function ZIP parsed successfully, and Render recorded HTTP 200 from Gemini's embedding endpoint.
+- The import then failed with a connection reset from the configured Qdrant Cloud endpoint. The same endpoint reset unauthenticated connection checks on ports 443 and 6333. This does not establish whether the cluster is paused, deleted, or otherwise unavailable; inspect Qdrant Cloud before changing its configuration.
+- Backend process resident memory after this small import attempt was approximately 358 MiB. This is one process measurement, not a guarantee of peak memory for larger repositories.
+- No successful end-to-end indexing or chat result has yet been established for this deployment. PostgreSQL operations occur after vector indexing and remain unverified by this smoke test.
 
 ```mermaid
 flowchart TD

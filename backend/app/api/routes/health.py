@@ -4,9 +4,5 @@ router = APIRouter()
 
 @router.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "qdrant": True,
-        "redis": True,
-        "postgres": True
-    }
+    """Process liveness only; do not claim untested dependencies are connected."""
+    return {"status": "ok"}

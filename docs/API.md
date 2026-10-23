@@ -78,7 +78,7 @@ An edge is a code connection found by the parser. It is not a measure of call fr
 - The API has no login or separation between users.
 - Only the latest indexed repository is active. API restarts lose its graph.
 - Local-path import and `POST /index` have been removed.
-- File/text import, evaluation, and health routes are not registered.
+- File/text import and evaluation routes are not registered. `GET /health` reports process liveness only; it does not assert database connectivity.
 - Answer streaming, import progress, and source-file retrieval are not registered.
 - TypeScript files use the JavaScript parser. Some declared settings are not used by the current components.
 

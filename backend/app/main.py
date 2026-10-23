@@ -6,6 +6,7 @@ from app.observability.http import setup_request_metrics
 from app.dependencies import ConfigDep
 from app.api.routes.query import router as query_router
 from app.api.routes.metrics import router as metrics_router
+from app.api.routes.health import router as health_router
 from contextlib import asynccontextmanager
 from app.core.runtime.startup import initialize_application
 from app.config import get_settings
@@ -52,6 +53,7 @@ app.add_middleware(
 
 app.include_router(query_router)
 app.include_router(metrics_router)
+app.include_router(health_router)
 app.include_router(graph_router)
 app.include_router(repositories_router)
 
